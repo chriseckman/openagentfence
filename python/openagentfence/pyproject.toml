@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openagentfence"
+dynamic = ["version"]
+description = "Python interoperability utilities for OpenAgentFence security traces (early development)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Christopher Eckman" }]
+keywords = [
+  "openagentfence",
+  "security",
+  "ai-agents",
+  "browser-agents",
+  "security-trace",
+  "interoperability",
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+# Zero runtime dependencies: this package parses untrusted security traces, so
+# its dependency surface is kept empty on purpose.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/chriseckman/openagentfence"
+Repository = "https://github.com/chriseckman/openagentfence"
+Issues = "https://github.com/chriseckman/openagentfence/issues"
+Security = "https://github.com/chriseckman/openagentfence/security/policy"
+
+[tool.hatch.version]
+path = "src/openagentfence/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openagentfence"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+  "/NOTICE",
+  "/pyproject.toml",
+]
