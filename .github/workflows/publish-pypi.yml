@@ -1,0 +1,100 @@
+name: Publish PyPI
+
+# Publishes the `openagentfence` Python interoperability package
+# (python/openagentfence) to PyPI using Trusted Publishing over GitHub OIDC.
+# There is no PyPI username, password, API token, or repository secret here by
+# design: the `pypi` environment exchanges a short-lived OIDC token for an
+# upload token at publish time.
+#
+# Manual dispatch only for now. Release/tag automation can be added later by
+# adding a trigger; the build/publish split below does not need to change.
+
+on:
+  workflow_dispatch:
+
+# Least privilege by default; jobs narrow this further.
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PACKAGE_DIR: python/openagentfence
+  ARTIFACT_NAME: python-distributions
+
+jobs:
+  build:
+    name: Build and verify distributions
+    runs-on: ubuntu-latest
+    # No id-token here: the build job must not be able to publish.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Run package tests
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: python -m unittest discover -s tests -v
+
+      - name: Install build tooling
+        run: python -m pip install --disable-pip-version-check "build==1.5.0" "twine==7.0.0"
+
+      - name: Build distributions
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: python -m build
+
+      - name: Validate distribution metadata
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: python -m twine check --strict dist/*
+
+      - name: List distributions
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: ls -l dist
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.PACKAGE_DIR }}/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Configured separately by the repository owner; add required reviewers
+    # and a branch restriction there to gate publication.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/openagentfence
+    # Only the OIDC token. No contents access: this job never checks out code,
+    # it publishes exactly what the build job produced.
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist
+
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist
+          print-hash: true
