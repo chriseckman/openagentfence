@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   fingerprint,
   type ActionIntent,
@@ -315,6 +315,30 @@ describe("guarded Playwright execution (OAF-BROWSER-002/014)", () => {
     );
     expect(
       await page.evaluate(() => (globalThis as { __clicked?: boolean }).__clicked === true),
+    ).toBe(false);
+    await page.close();
+  });
+
+  it("refuses a same-selector replacement after wrapper binding before side effect", async () => {
+    const page = await browser.newPage();
+    await page.setContent('<button id="go" onclick="window.__attackerClicked = true">go</button>');
+    const session = new OpenAgentFence({ adapter: playwrightAdapter(page) }).start({
+      task: "exact target replacement fixture",
+    });
+    const secure = wrapPage(session, page);
+    const executeAuthorized = session.executeAuthorized.bind(session);
+    vi.spyOn(session, "executeAuthorized").mockImplementation(async (authorized) => {
+      await page.locator("#go").evaluate((node) => {
+        node.outerHTML = '<button id="go" onclick="window.__attackerClicked = true">go</button>';
+      });
+      return executeAuthorized(authorized);
+    });
+
+    await expect(secure.click("#go")).rejects.toThrow();
+    expect(
+      await page.evaluate(
+        () => (globalThis as { __attackerClicked?: boolean }).__attackerClicked === true,
+      ),
     ).toBe(false);
     await page.close();
   });

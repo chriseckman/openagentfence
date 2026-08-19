@@ -16,6 +16,7 @@ import {
   type SecretResolver,
 } from "@openagentfence/core";
 import { currentState, type PlaywrightOperation, type PlaywrightUploadFile } from "./wrap.js";
+import { exactTargetHandle } from "./exact-target.js";
 import { PlaywrightHelperRegistry, type HelperArgument } from "./helpers.js";
 
 /** Fail-closed result of adapter-local state revalidation (ADR-0010). */
@@ -142,6 +143,7 @@ export function playwrightAdapter(
         throw new TypeError("playwright adapter requires a core-minted AuthorizedAction");
       }
       const action = authorized.action;
+      const exactTarget = exactTargetHandle(action.raw);
       const operation = parseOperation(action.raw);
       if (operation === undefined) {
         throw new TypeError("playwright adapter requires a validated exact operation");
@@ -183,10 +185,12 @@ export function playwrightAdapter(
           await page.goto(requiredArgument(operation));
           return undefined;
         case "click":
-          await page.locator(requiredSelector(operation)).click();
+          await (exactTarget ?? page.locator(requiredSelector(operation))).click();
           return undefined;
         case "fill":
-          await page.locator(requiredSelector(operation)).fill(requiredArgument(operation));
+          await (exactTarget ?? page.locator(requiredSelector(operation))).fill(
+            requiredArgument(operation),
+          );
           return undefined;
         case "type":
           await page
@@ -194,10 +198,14 @@ export function playwrightAdapter(
             .pressSequentially(requiredArgument(operation));
           return undefined;
         case "press":
-          await page.locator(requiredSelector(operation)).press(requiredArgument(operation));
+          await (exactTarget ?? page.locator(requiredSelector(operation))).press(
+            requiredArgument(operation),
+          );
           return undefined;
         case "selectOption":
-          await page.locator(requiredSelector(operation)).selectOption(requiredArgument(operation));
+          await (exactTarget ?? page.locator(requiredSelector(operation))).selectOption(
+            requiredArgument(operation),
+          );
           return undefined;
         case "setInputFiles":
           await page
@@ -205,7 +213,7 @@ export function playwrightAdapter(
             .setInputFiles(requiredFiles(operation).map(toPlaywrightUploadFile));
           return undefined;
         case "download":
-          await page.locator(requiredSelector(operation)).click();
+          await (exactTarget ?? page.locator(requiredSelector(operation))).click();
           return undefined;
       }
     },

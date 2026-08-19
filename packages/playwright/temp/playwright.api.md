@@ -30,6 +30,11 @@ export interface DownloadMetadata {
     readonly sourceOrigin: string;
 }
 
+// @public (undocumented)
+export type HelperArgument = null | boolean | number | string | readonly HelperArgument[] | {
+    readonly [key: string]: HelperArgument;
+};
+
 // @public
 export const PLAYWRIGHT_NETWORK_CAPABILITIES: NetworkCapabilities;
 
@@ -40,9 +45,33 @@ export function playwrightAdapter(page: Page, options?: PlaywrightAdapterOptions
 export interface PlaywrightAdapterOptions {
     // (undocumented)
     readonly captureScreenshot?: boolean;
+    readonly helpers?: PlaywrightHelperRegistry;
     // (undocumented)
     readonly maxScreenshotBytes?: number;
     readonly routeRequests?: boolean;
+}
+
+// @public
+export interface PlaywrightHelperDefinition {
+    // (undocumented)
+    readonly execute: (page: Page, args: HelperArgument) => Promise<void> | void;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly sha256: string;
+}
+
+// @public
+export class PlaywrightHelperRegistry {
+    constructor(definitions: readonly PlaywrightHelperDefinition[]);
+    // (undocumented)
+    get(name: string): PlaywrightHelperDefinition | undefined;
+    // (undocumented)
+    readonly id: `${string}-${string}-${string}-${string}-${string}`;
+    // (undocumented)
+    resolve(name: string, sha256: string): PlaywrightHelperDefinition | undefined;
+    // (undocumented)
+    validateArgs(value: unknown): HelperArgument;
 }
 
 // @public
@@ -54,7 +83,13 @@ export interface PlaywrightOperation {
     // (undocumented)
     readonly files?: readonly PlaywrightUploadFile[];
     // (undocumented)
-    readonly method: "goto" | "click" | "fill" | "type" | "press" | "selectOption" | "setInputFiles" | "download";
+    readonly helper?: {
+        readonly registryId: string;
+        readonly name: string;
+        readonly sha256: string;
+    };
+    // (undocumented)
+    readonly method: "goto" | "click" | "fill" | "type" | "press" | "selectOption" | "setInputFiles" | "download" | "helper";
     // (undocumented)
     readonly selector?: string;
 }
@@ -99,6 +134,8 @@ export interface SecurePage {
     // (undocumented)
     readonly download: (selector: string) => Promise<DownloadMetadata>;
     // (undocumented)
+    readonly executeHelper: (name: string, args: unknown) => Promise<void>;
+    // (undocumented)
     readonly goto: (url: string) => Promise<void>;
     // (undocumented)
     readonly locator: (selector: string) => SecureLocator;
@@ -117,7 +154,7 @@ export interface UploadOptions {
 }
 
 // @public (undocumented)
-export function wrapPage(session: SecuritySession, page: Page): SecurePage;
+export function wrapPage(session: SecuritySession, page: Page, helpers?: PlaywrightHelperRegistry): SecurePage;
 
 // (No @packageDocumentation comment for this package)
 

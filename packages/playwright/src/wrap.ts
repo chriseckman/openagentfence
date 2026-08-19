@@ -10,6 +10,7 @@ import {
   type SecuritySession,
 } from "@openagentfence/core";
 import { PlaywrightHelperRegistry } from "./helpers.js";
+import { bindExactTarget } from "./exact-target.js";
 
 const INTENT_TTL_MS = 5_000;
 
@@ -98,7 +99,7 @@ export function wrapPage(
       throw new TypeError("secret-handle-bearing Playwright operations are disabled until M4");
     }
     const observation = await session.observe();
-    const operation: PlaywrightOperation = Object.freeze({
+    const operation = await bindExactOperationTarget(page, {
       adapter: "playwright",
       method,
       ...(selector !== undefined ? { selector } : {}),
@@ -239,6 +240,21 @@ export function wrapPage(
     locator,
     rawPage: (reason) => session.unsafe.rawPage(reason) as Page,
   };
+}
+
+/**
+ * Keep the exact DOM node as adapter-private runtime state. It is deliberately
+ * non-enumerable: ActionIntent and traces retain only the validated structured
+ * operation, while the executor can refuse a same-selector replacement.
+ */
+async function bindExactOperationTarget(
+  page: Page,
+  operation: PlaywrightOperation,
+): Promise<PlaywrightOperation> {
+  if (operation.selector === undefined) return Object.freeze(operation);
+  const handle = await page.locator(operation.selector).elementHandle();
+  bindExactTarget(operation, handle);
+  return Object.freeze(operation);
 }
 
 function reauthorizationReason(
