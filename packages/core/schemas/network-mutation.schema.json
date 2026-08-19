@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/network-mutation.schema.json",
+  "title": "OpenAgentFence NetworkMutation",
+  "type": "object",
+  "required": ["surface", "initiator", "destination", "enforcement"],
+  "additionalProperties": false,
+  "properties": {
+    "surface": {
+      "enum": [
+        "navigation",
+        "redirect",
+        "form",
+        "fetch",
+        "headers",
+        "websocket",
+        "send_beacon",
+        "service_worker",
+        "upload",
+        "download",
+        "popup",
+        "webmcp"
+      ]
+    },
+    "initiator": {
+      "enum": [
+        "authorized_action",
+        "page_script",
+        "form",
+        "redirect",
+        "webmcp",
+        "service_worker",
+        "unknown"
+      ]
+    },
+    "origin": { "type": "string", "maxLength": 2048 },
+    "frameOrigin": { "type": "string", "maxLength": 2048 },
+    "destination": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "enforcement": { "enum": ["enforced", "observed_only", "unavailable"] },
+    "metadata": {
+      "type": "object",
+      "required": ["headers"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "maxLength": 2048 }
+        },
+        "bodyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bodySize": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "actionIntentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "redirectHops": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}

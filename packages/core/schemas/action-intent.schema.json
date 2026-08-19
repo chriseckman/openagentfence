@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/action-intent.schema.json",
+  "title": "OpenAgentFence ActionIntent",
+  "type": "object",
+  "required": [
+    "intentId",
+    "actionId",
+    "action",
+    "observation",
+    "target",
+    "securityAttributes",
+    "visibility",
+    "policyHash",
+    "operationHash",
+    "createdAt",
+    "expiresAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "intentId": { "type": "string", "minLength": 1 },
+    "actionId": { "type": "string", "minLength": 1 },
+    "action": { "type": "object" },
+    "observation": {
+      "type": "object",
+      "required": ["browserContextId", "pageId", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "browserContextId": { "type": "string" },
+        "pageId": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "selector": { "type": "string" },
+        "element": { "type": "string" },
+        "frame": { "type": "string" },
+        "origin": { "type": "string" }
+      }
+    },
+    "frameOrigin": { "type": "string" },
+    "destination": { "type": "string" },
+    "formAction": { "type": "string" },
+    "securityAttributes": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "visibility": { "type": "string" },
+    "policyHash": { "type": "string", "minLength": 1 },
+    "operationHash": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "number" },
+    "expiresAt": { "type": "number" }
+  }
+}

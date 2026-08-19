@@ -1,0 +1,16 @@
+version: 1
+
+defaults:
+  unknown_action: block
+
+navigation:
+  mode: same-site
+  block_private_networks: true
+
+actions:
+  upload: deny
+  purchase: approval
+  execute_script: deny
+
+secrets:
+  resolution: executor_only

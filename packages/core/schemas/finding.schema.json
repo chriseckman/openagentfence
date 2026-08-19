@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/finding.schema.json",
+  "title": "OpenAgentFence Finding",
+  "type": "object",
+  "required": [
+    "id",
+    "category",
+    "title",
+    "description",
+    "source",
+    "provenance",
+    "evidence",
+    "recommendedAction"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "category": { "type": "string" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["dom", "url", "probe", "model", "tool", "memory", "file", "header"] },
+        "selector": { "type": "string" },
+        "xpath": { "type": "string" },
+        "origin": { "type": "string" },
+        "frameOrigin": { "type": "string" },
+        "boundingBox": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "width": { "type": "number" },
+            "height": { "type": "number" }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["user", "application", "web", "tool", "memory"] },
+        "origin": { "type": "string" },
+        "frameOrigin": { "type": "string" },
+        "pageId": { "type": "string" },
+        "elementId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "evidence": { "type": "string" },
+    "recommendedAction": { "enum": ["allow", "warn", "sanitize", "approve", "block"] },
+    "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

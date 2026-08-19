@@ -1,0 +1,12 @@
+node_modules
+**/dist
+**/coverage
+**/etc
+.turbo
+docs
+*.md
+CHANGELOG.md
+pnpm-lock.yaml
+LICENSE
+NOTICE
+opencode.jsonc

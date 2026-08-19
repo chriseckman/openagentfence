@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/trace.schema.json",
+  "title": "OpenAgentFence SecurityTrace",
+  "type": "object",
+  "required": ["schemaVersion", "events"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Trace schema semver. Additive changes bump the minor; breaking changes the major."
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/traceEvent" }
+    }
+  },
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "required": ["findingId", "category", "evidenceHash", "sourceType"],
+      "additionalProperties": false,
+      "properties": {
+        "findingId": { "type": "string", "minLength": 1 },
+        "category": { "type": "string", "minLength": 1 },
+        "evidenceHash": { "type": "string", "minLength": 1 },
+        "sourceType": { "type": "string", "minLength": 1 }
+      }
+    },
+    "traceEvent": {
+      "type": "object",
+      "required": ["kind", "timestamp", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "session_start",
+            "observation",
+            "finding",
+            "scan_result",
+            "proposed_action",
+            "canonical_action",
+            "policy_decision",
+            "approval_request",
+            "approval_decision",
+            "execution",
+            "post_action",
+            "risk_change",
+            "budget_event",
+            "escape_hatch",
+            "network_mutation",
+            "authorized_action",
+            "action_revalidation",
+            "session_end"
+          ]
+        },
+        "timestamp": { "type": "string", "minLength": 1 },
+        "data": {
+          "type": "object",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["sessionId", "policyHash", "versions"],
+              "properties": {
+                "sessionId": { "type": "string", "minLength": 1 },
+                "policyHash": { "type": "string", "minLength": 1 },
+                "versions": {
+                  "type": "object",
+                  "required": ["schema"],
+                  "properties": { "schema": { "type": "string" } }
+                }
+              }
+            },
+            { "type": "object" }
+          ]
+        }
+      }
+    }
+  }
+}

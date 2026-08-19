@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import { buildScopedView, defineScanner } from "../src/index.js";
+import { mkContext, mkAction } from "./helpers.js";
+
+describe("defineScanner", () => {
+  it("returns a frozen scanner", () => {
+    const s = defineScanner({
+      id: "s",
+      phases: ["PERCEPTION"],
+      kind: "deterministic",
+      scan: async () => ({
+        scanner: "s",
+        kind: "deterministic" as const,
+        verdict: "allow" as const,
+        severity: "low" as const,
+        findings: [],
+      }),
+    });
+    expect(Object.isFrozen(s)).toBe(true);
+  });
+
+  it("rejects a scanner without phases", () => {
+    expect(() =>
+      defineScanner({
+        id: "s",
+        phases: [],
+        kind: "deterministic",
+        scan: async () => ({
+          scanner: "s",
+          kind: "deterministic" as const,
+          verdict: "allow" as const,
+          severity: "low" as const,
+          findings: [],
+        }),
+      }),
+    ).toThrow();
+  });
+});
+
+describe("scoped context views (least privilege)", () => {
+  it("omits observation and action data when only action:metadata is granted", () => {
+    const ctx = mkContext("PRE_ACTION", {
+      kind: "proposedAction",
+      action: mkAction("FILL", { data: "<SECRET:api:abc>" }),
+    });
+    const view = buildScopedView(ctx, ["action:metadata"]);
+    expect(view.observation).toBeUndefined();
+    expect(view.action).toBeDefined();
+    expect(view.action?.["data"]).toBeUndefined();
+    expect(view.action?.["type"]).toBe("FILL");
+  });
+
+  it("includes handles only with secrets:handles permission", () => {
+    const ctx = mkContext("PRE_ACTION", {
+      kind: "proposedAction",
+      action: mkAction("FILL", { data: "<SECRET:api:abc>" }),
+    });
+    expect(buildScopedView(ctx, ["action:metadata"]).handles).toBeUndefined();
+    expect(buildScopedView(ctx, ["secrets:handles"]).handles?.length).toBe(1);
+  });
+
+  it("redacts page text in a scoped observation view", () => {
+    const ctx = mkContext("PERCEPTION", {
+      kind: "observation",
+      observation: {
+        url: "https://example.com",
+        origin: "https://example.com",
+        frames: [],
+        ariaSnapshot: "secret-token-1234 visible text",
+        provenance: { trust: "web" },
+      },
+    });
+    ctx.redactor.registerSecret("secret-token-1234");
+    const view = buildScopedView(ctx, ["page:visible_text"]);
+    const snapshot = view.observation?.["ariaSnapshot"];
+    expect(snapshot).toBeDefined();
+    expect(String(snapshot)).not.toContain("secret-token-1234");
+  });
+});

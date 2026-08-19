@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/authorized-action.schema.json",
+  "title": "OpenAgentFence AuthorizedAction",
+  "type": "object",
+  "required": [
+    "action",
+    "intent",
+    "operationHash",
+    "policyHash",
+    "decisionId",
+    "traceId",
+    "createdAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "action": { "type": "object" },
+    "intent": { "$ref": "https://openagentfence.dev/schemas/action-intent.schema.json" },
+    "operationHash": { "type": "string", "minLength": 1 },
+    "policyHash": { "type": "string", "minLength": 1 },
+    "decisionId": { "type": "string", "minLength": 1 },
+    "traceId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "number" }
+  }
+}

@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a new capability or improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What gap does this fill?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description:
+        What should change, and how does it respect the security invariants in docs/THREAT_MODEL.md
+        §6?
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label:
+            This does not add a required cloud dependency, telemetry, or a dependency to a
+            security-critical path.
+          required: true

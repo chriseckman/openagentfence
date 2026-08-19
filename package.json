@@ -1,0 +1,44 @@
+{
+  "name": "openagentfence",
+  "version": "0.0.0",
+  "private": true,
+  "description": "An open-source security firewall for AI browser agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint && pnpm run check:deps && pnpm run check:workflow",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "api-report": "turbo run build && node scripts/api-report.mjs",
+    "api-report:check": "turbo run build && node scripts/api-report.mjs --check",
+    "check:deps": "node scripts/check-dependency-direction.mjs",
+    "check:workflow": "node scripts/check-workflow-pinning.mjs",
+    "docs:check": "node scripts/check-docs-links.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.9",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@eslint/js": "^9.15.0",
+    "@microsoft/api-extractor": "^7.48.0",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.15.0",
+    "fast-check": "^3.23.0",
+    "prettier": "^3.4.1",
+    "turbo": "^2.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.15.0",
+    "vitest": "^2.1.8"
+  }
+}

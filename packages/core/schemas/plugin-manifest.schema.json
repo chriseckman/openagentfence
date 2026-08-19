@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/plugin-manifest.schema.json",
+  "title": "OpenAgentFence PluginManifest",
+  "type": "object",
+  "required": ["id", "permissions", "network"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string" },
+    "version": { "type": "string" },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "page:visible_text",
+          "page:hidden_text",
+          "page:redacted_text",
+          "page:screenshot",
+          "action:metadata",
+          "action:data",
+          "secrets:handles"
+        ]
+      }
+    },
+    "network": { "type": "boolean" }
+  }
+}

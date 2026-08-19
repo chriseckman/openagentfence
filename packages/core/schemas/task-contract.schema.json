@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/task-contract.schema.json",
+  "title": "OpenAgentFence TaskContract",
+  "type": "object",
+  "required": ["task"],
+  "additionalProperties": false,
+  "properties": {
+    "task": { "type": "string", "minLength": 1 },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "navigation": { "enum": ["same-site", "same-origin", "allowlist", "none"] },
+        "downloads": { "type": "boolean" },
+        "uploads": { "type": "boolean" },
+        "purchases": { "type": "boolean" },
+        "messaging": { "type": "boolean" },
+        "destructiveActions": { "type": "boolean" },
+        "credentials": { "type": "boolean" },
+        "executeScript": { "type": "boolean" },
+        "privateNetwork": { "type": "boolean" },
+        "externalCommunication": { "type": "boolean" }
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "origins", "fieldTypes"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["SECRET", "PII", "CREDENTIAL"] },
+          "origins": { "type": "array", "items": { "type": "string" } },
+          "fieldTypes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "origins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "block": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxActions": { "type": "number", "minimum": 0 },
+        "maxDurationMs": { "type": "number", "minimum": 0 },
+        "maxNavigations": { "type": "number", "minimum": 0 },
+        "maxRedirectHops": { "type": "number", "minimum": 0 },
+        "maxGuardCalls": { "type": "number", "minimum": 0 },
+        "maxGuardTokens": { "type": "number", "minimum": 0 },
+        "maxDownloads": { "type": "number", "minimum": 0 },
+        "maxDownloadBytes": { "type": "number", "minimum": 0 },
+        "maxUploadBytes": { "type": "number", "minimum": 0 },
+        "maxTabs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "timeoutMs": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/guard-classification.schema.json",
+  "title": "OpenAgentFence GuardClassification",
+  "type": "object",
+  "required": ["promptInjection", "confidence", "categories", "recommendedVerdict"],
+  "additionalProperties": false,
+  "properties": {
+    "promptInjection": { "type": "boolean" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "categories": { "type": "array", "items": { "type": "string" } },
+    "recommendedVerdict": { "enum": ["allow", "warn", "sanitize", "approve", "block"] }
+  }
+}

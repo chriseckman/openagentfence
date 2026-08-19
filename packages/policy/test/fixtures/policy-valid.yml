@@ -1,0 +1,20 @@
+version: 1
+defaults:
+  unknown_action: block
+  scanner_failure:
+    low_risk: warn
+    high_risk: block
+navigation:
+  mode: same-site
+  block_private_networks: true
+actions:
+  upload: deny
+  delete: approval
+  purchase: approval
+  message: approval
+  execute_script: deny
+secrets:
+  resolution: executor_only
+injection:
+  high_confidence: restricted_mode
+  critical: quarantine

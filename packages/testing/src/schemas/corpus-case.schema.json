@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/corpus-case.schema.json",
+  "title": "OpenAgentFence CorpusCase",
+  "type": "object",
+  "required": ["id", "mode", "attackClasses", "invariants", "kind", "pages", "task", "expected"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 65536 },
+    "mode": { "enum": ["attack", "benign"] },
+    "attackClasses": { "type": "array", "items": { "type": "string" } },
+    "invariants": { "type": "array", "items": { "type": "string" } },
+    "kind": { "enum": ["static", "mutation", "adaptive-ready"] },
+    "surfaces": { "type": "array", "items": { "type": "string" } },
+    "initiator": { "type": "string", "maxLength": 65536 },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url"],
+        "additionalProperties": false,
+        "properties": {
+          "url": { "type": "string", "maxLength": 65536 },
+          "origin": { "type": "string", "maxLength": 65536 }
+        }
+      }
+    },
+    "task": { "type": "string", "maxLength": 65536 },
+    "policy": { "type": "object" },
+    "steps": { "type": "array", "items": { "type": "object" } },
+    "expected": {
+      "type": "object",
+      "required": ["outcome"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": { "type": "string", "maxLength": 65536 },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "findings": { "type": "array", "items": { "type": "string" } },
+        "risk": { "type": "string" },
+        "control": { "type": "string" }
+      }
+    },
+    "locale": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}

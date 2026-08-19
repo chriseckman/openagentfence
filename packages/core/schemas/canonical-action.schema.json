@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/canonical-action.schema.json",
+  "title": "OpenAgentFence CanonicalAction",
+  "type": "object",
+  "required": ["type", "instructionProvenance"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "enum": [
+        "READ",
+        "SCROLL",
+        "CLICK",
+        "TYPE",
+        "FILL",
+        "NAVIGATE",
+        "SUBMIT",
+        "UPLOAD",
+        "DOWNLOAD",
+        "OPEN_TAB",
+        "CLOSE_TAB",
+        "COPY",
+        "PASTE",
+        "EXECUTE_SCRIPT",
+        "AUTHENTICATE",
+        "PURCHASE",
+        "DELETE",
+        "PUBLISH",
+        "MESSAGE",
+        "CHANGE_SETTING",
+        "UNKNOWN"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "element": { "type": "string" },
+        "frame": { "type": "string" },
+        "origin": { "type": "string" }
+      }
+    },
+    "destination": { "type": "string" },
+    "data": {},
+    "instructionProvenance": {
+      "type": "object",
+      "required": ["trust"],
+      "properties": {
+        "trust": { "enum": ["user", "application", "web", "tool", "memory"] },
+        "origin": { "type": "string" },
+        "frameOrigin": { "type": "string" },
+        "pageId": { "type": "string" },
+        "elementId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "sideEffectClass": {
+      "enum": [
+        "READ_ONLY",
+        "REVERSIBLE",
+        "EXTERNAL_SIDE_EFFECT",
+        "FINANCIAL",
+        "DESTRUCTIVE",
+        "SECURITY_SENSITIVE"
+      ]
+    },
+    "raw": {}
+  }
+}

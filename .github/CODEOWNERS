@@ -1,0 +1,23 @@
+# Security-sensitive paths require maintainer review (see GOVERNANCE.md).
+# `core` is the authorization boundary; scanners, decoders, vaults, and
+# adapter/provider execution paths sit on the privileged path between
+# untrusted web content and browser capabilities.
+
+/packages/core/ @chriseckman
+/packages/policy/ @chriseckman
+/packages/vault/ @chriseckman
+/packages/scanners/ @chriseckman
+
+# Adapter executor paths and secure wrappers
+/packages/playwright/ @chriseckman
+/packages/stagehand/ @chriseckman
+
+# Provider request-redaction and response-validation paths
+/packages/providers/ @chriseckman
+
+/security-corpus/ @chriseckman
+
+/SECURITY.md @chriseckman
+/docs/THREAT_MODEL.md @chriseckman
+/docs/adr/ @chriseckman
+/.github/workflows/ @chriseckman

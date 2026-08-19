@@ -1,0 +1,21 @@
+name: Corpus contribution
+description: Propose a new security-corpus attack or benign fixture.
+labels: [security, corpus]
+body:
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Fixture
+      description:
+        Describe the case (attack class, expected verdict/reasons, steps). Synthetic values only.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: The fixture contains no real secrets or credentials (INV-05).
+          required: true
+        - label: I have not copied or ported from Agent Browser Shield (ADR-0006).
+          required: true

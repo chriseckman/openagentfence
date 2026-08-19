@@ -1,0 +1,4 @@
+version: 1
+defaults: &defaults
+  unknown_action: block
+navigation: *defaults
