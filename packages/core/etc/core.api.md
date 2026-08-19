@@ -83,6 +83,7 @@ export interface AdapterEvent {
     readonly frameId?: string;
     // (undocumented)
     readonly kind: "navigation" | "popup" | "download";
+    readonly mainFrame?: boolean;
     // (undocumented)
     readonly origin?: string;
     readonly pageId?: string;
@@ -230,6 +231,7 @@ export interface BrowserAdapterCapabilities {
     readonly ariaSnapshot: boolean;
     // (undocumented)
     readonly downloadEvents: boolean;
+    readonly navigationEvents: boolean;
     // (undocumented)
     readonly popupEvents: boolean;
     // (undocumented)
@@ -341,6 +343,9 @@ export interface CapabilityEnvelope extends ResolvedCapabilities {
 
 // @public
 export function compareIntentState(intent: ActionIntent, snapshot: IntentStateSnapshot): readonly IntentMismatchCode[];
+
+// @public
+export function comparePostAction(observation: PostActionObservation): readonly PostActionReason[];
 
 // @public
 export function compileTaskContract(contract: ValidatedTaskContract): CapabilityEnvelope;
@@ -534,6 +539,12 @@ export interface EvidenceReference {
     readonly findingId: string;
     // (undocumented)
     readonly sourceType: string;
+}
+
+// @public
+export interface ExactActionExecutor {
+    // (undocumented)
+    execute(): Promise<unknown>;
 }
 
 // @public (undocumented)
@@ -955,6 +966,9 @@ export type PhasePayload = {
     readonly kind: "proposedAction";
     readonly action: CanonicalAction;
 } | {
+    readonly kind: "postAction";
+    readonly observation: PostActionObservation;
+} | {
     readonly kind: "modelOutput";
     readonly output: ModelOutput;
 } | {
@@ -1046,6 +1060,37 @@ export interface PolicyScannerEvidence {
     // (undocumented)
     readonly severity: "low" | "high" | "critical";
 }
+
+// @public (undocumented)
+export const POST_ACTION_MAX_EVENTS = 32;
+
+// @public
+export const POST_ACTION_SETTLE_MS = 25;
+
+// @public
+export function postActionCapabilitiesAvailable(capabilities: BrowserAdapterCapabilities): boolean;
+
+// @public (undocumented)
+export interface PostActionObservation {
+    // (undocumented)
+    readonly action: CanonicalAction;
+    // (undocumented)
+    readonly events: readonly AdapterEvent[];
+    // (undocumented)
+    readonly intent: ActionIntent;
+    // (undocumented)
+    readonly intentId: string;
+    // (undocumented)
+    readonly startedOrigin?: string;
+    // (undocumented)
+    readonly status: PostActionStatus;
+}
+
+// @public (undocumented)
+export type PostActionReason = "unexpected_redirect" | "unexpected_tab" | "unexpected_download" | "unexpected_origin_change" | "post_action_observation_unavailable" | "post_action_observation_cancelled" | "post_action_observation_overflow";
+
+// @public (undocumented)
+export type PostActionStatus = "complete" | "unavailable" | "cancelled" | "overflow";
 
 // @public
 export const PROBE_CONTRAST_UNSUPPORTED = true;
@@ -1222,6 +1267,13 @@ export const REASON_CODES: {
     readonly action_policy_mismatch: "action_policy_mismatch";
     readonly action_operation_mismatch: "action_operation_mismatch";
     readonly action_intent_retry_exhausted: "action_intent_retry_exhausted";
+    readonly unexpected_redirect: "unexpected_redirect";
+    readonly unexpected_tab: "unexpected_tab";
+    readonly unexpected_download: "unexpected_download";
+    readonly unexpected_origin_change: "unexpected_origin_change";
+    readonly post_action_observation_unavailable: "post_action_observation_unavailable";
+    readonly post_action_observation_cancelled: "post_action_observation_cancelled";
+    readonly post_action_observation_overflow: "post_action_observation_overflow";
 };
 
 // @public (undocumented)
@@ -1384,11 +1436,13 @@ export interface RiskPolicy {
     // (undocumented)
     readonly secretRequestedWeight: number;
     // (undocumented)
+    readonly unexpectedDownloadWeight: number;
+    // (undocumented)
     readonly unrelatedTabWeight: number;
 }
 
 // @public
-export type RiskSignal = "hidden_injection" | "cross_origin_redirect" | "secret_requested" | "unrelated_tab" | "high_confidence_injection" | "critical_finding";
+export type RiskSignal = "hidden_injection" | "cross_origin_redirect" | "secret_requested" | "unrelated_tab" | "unexpected_download" | "high_confidence_injection" | "critical_finding";
 
 // @public (undocumented)
 export type RiskState = (typeof RISK_STATES)[number];
@@ -1628,6 +1682,7 @@ export class SecuritySession {
     // (undocumented)
     readonly envelope: CapabilityEnvelope;
     executeAuthorized(authorized: Authorized): Promise<unknown>;
+    executeAuthorizedWith(authorized: Authorized, executor: ExactActionExecutor): Promise<unknown>;
     // (undocumented)
     get guardProvider(): GuardModelProvider | undefined;
     // (undocumented)

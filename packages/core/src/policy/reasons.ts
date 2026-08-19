@@ -38,6 +38,13 @@ export const REASON_CODES = {
   action_policy_mismatch: "action_policy_mismatch",
   action_operation_mismatch: "action_operation_mismatch",
   action_intent_retry_exhausted: "action_intent_retry_exhausted",
+  unexpected_redirect: "unexpected_redirect",
+  unexpected_tab: "unexpected_tab",
+  unexpected_download: "unexpected_download",
+  unexpected_origin_change: "unexpected_origin_change",
+  post_action_observation_unavailable: "post_action_observation_unavailable",
+  post_action_observation_cancelled: "post_action_observation_cancelled",
+  post_action_observation_overflow: "post_action_observation_overflow",
 } as const;
 
 export type ReasonCode = (typeof REASON_CODES)[keyof typeof REASON_CODES];
@@ -78,6 +85,16 @@ export const REASON_CODE_DESCRIPTIONS: Readonly<Record<ReasonCode, string>> = {
   action_policy_mismatch: "The policy hash no longer matches the authorization.",
   action_operation_mismatch: "The exact operation no longer matches the authorized action.",
   action_intent_retry_exhausted: "Reauthorization retries were exhausted.",
+  unexpected_redirect: "The executed action produced a redirect outside its authorized effect.",
+  unexpected_tab: "The executed action opened an unexpected tab or popup.",
+  unexpected_download: "The executed action produced an unexpected download.",
+  unexpected_origin_change: "The executed action changed the top-level page origin unexpectedly.",
+  post_action_observation_unavailable:
+    "The adapter cannot observe required post-action effects; subsequent authority is restricted.",
+  post_action_observation_cancelled:
+    "Post-action observation was cancelled; subsequent authority is restricted.",
+  post_action_observation_overflow:
+    "Post-action observation exceeded its bounded event capacity; subsequent authority is restricted.",
 };
 
 export function isReasonCode(value: string): value is ReasonCode {

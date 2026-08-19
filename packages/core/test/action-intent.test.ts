@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import {
   validateActionIntent,
@@ -13,6 +13,7 @@ import {
   validateTraceDocument,
   RedactionRegistry,
   TraceWriter,
+  OpenAgentFence,
 } from "../src/index.js";
 import { mintAuthorizedAction } from "../src/action/authorized.js";
 import type { ActionIntent, CanonicalAction, IntentStateSnapshot } from "../src/index.js";
@@ -183,6 +184,44 @@ describe("AuthorizedAction brand", () => {
     expect(isAuthorizedAction(raw)).toBe(false);
     // @ts-expect-error — executeAuthorized accepts only AuthorizedAction
     void adapter.executeAuthorized(raw, denyAllResolver);
+  });
+});
+
+describe("issued authorization lifecycle", () => {
+  it("invalidates an unconsumed authorization after firewall-owned budget state changes", async () => {
+    const executeAuthorized = vi.fn(async () => undefined);
+    const adapter = fakeAdapter({ executeAuthorized });
+    const session = new OpenAgentFence({ adapter }).start({ task: "state binding" });
+    const action: CanonicalAction = {
+      type: "CLICK",
+      target: { element: "#continue", origin: "https://example.com" },
+      instructionProvenance: { trust: "application" },
+      raw: { adapter: "test", operation: "click" },
+    };
+    const now = Date.now();
+    const bound = await session.authorizeBound(action, {
+      intentId: "intent-budget-state",
+      actionId: "action-budget-state",
+      action,
+      observation: { browserContextId: "context", pageId: "page", revision: 1 },
+      target: { selector: "#continue", origin: "https://example.com" },
+      securityAttributes: {},
+      visibility: "visible",
+      policyHash: session.policyEngine.policyHash,
+      operationHash: "test-operation",
+      createdAt: now,
+      expiresAt: now + 10_000,
+    });
+    if (bound.authorized === undefined) throw new Error("expected authorization");
+
+    expect(session.reserveBudget([{ kind: "actions" }])).toBe(true);
+    await expect(session.executeAuthorized(bound.authorized)).rejects.toThrow(
+      "approval_reauthorization_required",
+    );
+    expect(executeAuthorized).not.toHaveBeenCalled();
+
+    const trace = await session.end();
+    expect(trace.events.some((event) => event.kind === "action_revalidation")).toBe(true);
   });
 });
 

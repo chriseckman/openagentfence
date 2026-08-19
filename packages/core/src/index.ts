@@ -78,6 +78,17 @@ export type {
   IntentMismatchCode,
   IntentStateSnapshot,
 } from "./action/intent.js";
+export {
+  POST_ACTION_SETTLE_MS,
+  POST_ACTION_MAX_EVENTS,
+  comparePostAction,
+  postActionCapabilitiesAvailable,
+} from "./action/post-action.js";
+export type {
+  PostActionObservation,
+  PostActionReason,
+  PostActionStatus,
+} from "./action/post-action.js";
 // Minting is deliberately internal to SecuritySession. Exporting the
 // constructor would let an application fabricate a branded value and bypass
 // PRE_ACTION authorization; adapters receive the opaque brand only from core.
@@ -265,6 +276,7 @@ export type {
   SecuritySessionInit,
   PerceptionResult,
   BoundAuthorizationResult,
+  ExactActionExecutor,
 } from "./session/session.js";
 export { OpenAgentFence } from "./session/facade.js";
 export type { OpenAgentFenceOptions } from "./session/facade.js";

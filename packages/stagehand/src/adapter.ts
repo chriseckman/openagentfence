@@ -9,6 +9,7 @@ import {
   type SecuritySession,
   type UntrustedContent,
 } from "@openagentfence/core";
+import { randomUUID } from "node:crypto";
 import type { StagehandLike, StagehandObserveResult } from "./types.js";
 
 /** Stable fail-closed reason codes emitted by the Stagehand wrapper. */
@@ -242,9 +243,14 @@ export function wrapStagehand(
       );
     }
     const now = Date.now();
+    // The observed structured operation is the only Stagehand executor input.
+    // Resolver-provided operation hashes are not authority: derive the hash
+    // locally so a hostile or stale resolver cannot bind a different method or
+    // argument vector under the same snapshot.
+    const operationHash = fingerprint(action);
     const intent: ActionIntent = {
-      intentId: `stagehand-intent-${fingerprint(`${now}:${action.selector}:${action.method ?? ""}`)}`,
-      actionId: `stagehand-action-${fingerprint(JSON.stringify(action))}`,
+      intentId: `stagehand-intent-${randomUUID()}`,
+      actionId: `stagehand-action-${randomUUID()}`,
       action: candidate,
       observation: state.observation,
       target: state.target,
@@ -253,7 +259,7 @@ export function wrapStagehand(
       securityAttributes: state.securityAttributes,
       visibility: state.visibility,
       policyHash: state.policyHash,
-      operationHash: state.operationHash,
+      operationHash,
       createdAt: now,
       expiresAt: now + 5_000,
     };
@@ -264,7 +270,8 @@ export function wrapStagehand(
         "state-bound authorization was blocked",
       );
     }
-    const current = await options.stateResolver.snapshot(action);
+    const currentState = await options.stateResolver.snapshot(action);
+    const current: IntentStateSnapshot = { ...currentState, operationHash };
     const mismatch = isIntentExpired(bound.authorized.intent)
       ? "action_intent_expired"
       : compareIntentState(bound.authorized.intent, current).length > 0
@@ -275,7 +282,9 @@ export function wrapStagehand(
       if (!retried) return actOnce(instruction, true);
       throw new StagehandSecurityError(mismatch, "Stagehand state changed during bounded retry");
     }
-    return stagehand.act(action);
+    return session.executeAuthorizedWith(bound.authorized, {
+      execute: () => stagehand.act(action),
+    });
   };
 
   return {

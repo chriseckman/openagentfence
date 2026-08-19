@@ -90,6 +90,7 @@ describe("session trace metadata and evidence", () => {
     const adapter = fakeAdapter({
       capabilities: {
         route: true,
+        navigationEvents: true,
         downloadEvents: false,
         popupEvents: true,
         screenshot: false,

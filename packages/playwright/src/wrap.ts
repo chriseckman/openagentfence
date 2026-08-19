@@ -1,5 +1,5 @@
 import type { Download, Page } from "playwright";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   fingerprint,
@@ -92,6 +92,7 @@ export function wrapPage(
     files?: readonly PlaywrightUploadFile[],
     data?: unknown,
     helper?: PlaywrightOperation["helper"],
+    retried = false,
   ): Promise<void> => {
     if (args.some((value) => value.includes("openagentfence://secret/"))) {
       throw new TypeError("secret-handle-bearing Playwright operations are disabled until M4");
@@ -114,8 +115,8 @@ export function wrapPage(
     );
     const now = Date.now();
     const intent: ActionIntent = {
-      intentId: `pw-intent-${fingerprint(`${now}:${operation.method}:${operation.selector ?? ""}`)}`,
-      actionId: `pw-action-${fingerprint(JSON.stringify(operation))}`,
+      intentId: `pw-intent-${randomUUID()}`,
+      actionId: `pw-action-${randomUUID()}`,
       action,
       observation: state.observation,
       target: state.target,
@@ -136,7 +137,17 @@ export function wrapPage(
     if (bound.authorized === undefined) {
       throw new Error(`Playwright operation blocked (${bound.decision.reasons.join(", ")})`);
     }
-    await session.executeAuthorized(bound.authorized);
+    try {
+      await session.executeAuthorized(bound.authorized);
+    } catch (error) {
+      const reason = reauthorizationReason(error);
+      if (reason !== undefined) {
+        session.recordRevalidation(reason, bound.authorized.intent.intentId);
+        if (!retried) return execute(method, selector, args, files, data, helper, true);
+        throw new TypeError(`Playwright state reauthorization retry exhausted (${reason})`);
+      }
+      throw error;
+    }
   };
 
   const locator = (selector: string): SecureLocator => ({
@@ -228,6 +239,31 @@ export function wrapPage(
     locator,
     rawPage: (reason) => session.unsafe.rawPage(reason) as Page,
   };
+}
+
+function reauthorizationReason(
+  error: unknown,
+):
+  | "action_intent_expired"
+  | "action_intent_mismatch"
+  | "action_policy_mismatch"
+  | "approval_reauthorization_required"
+  | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const name = "name" in error ? error.name : undefined;
+  const reason = "reason" in error ? error.reason : undefined;
+  if (
+    name === "PlaywrightRevalidationError" &&
+    (reason === "action_intent_expired" ||
+      reason === "action_intent_mismatch" ||
+      reason === "action_policy_mismatch")
+  ) {
+    return reason;
+  }
+  const message = "message" in error && typeof error.message === "string" ? error.message : "";
+  return message.includes("approval_reauthorization_required")
+    ? "approval_reauthorization_required"
+    : undefined;
 }
 
 function validateUploadFiles(files: unknown, options: unknown): readonly PlaywrightUploadFile[] {
@@ -348,6 +384,17 @@ async function submitOrClickAction(
         fields: form.fields,
         ...(data !== undefined ? { data } : {}),
       },
+      instructionProvenance: { trust: "application" },
+      raw: operation,
+    };
+  }
+  const href = await page.locator(selector).getAttribute("href");
+  if (href !== null) {
+    return {
+      type: "NAVIGATE",
+      navigationOrigin: "link",
+      target: { element: selector, origin },
+      destination: absoluteUrl(page.url(), href),
       instructionProvenance: { trust: "application" },
       raw: operation,
     };
@@ -559,6 +606,9 @@ export async function currentState(
     },
     frameOrigin: observation.origin,
     ...(href !== undefined ? { destination: absoluteUrl(page.url(), href) } : {}),
+    ...(href !== undefined && operation.method === "click"
+      ? { navigationOrigin: "link" as const }
+      : {}),
     ...(formAction !== undefined ? { formAction: absoluteUrl(page.url(), formAction) } : {}),
     securityAttributes: attributes,
     visibility: details.visible ? "visible" : "hidden",

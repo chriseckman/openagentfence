@@ -259,6 +259,17 @@ report/docs/changeset updates, or an expected unsupported framework surface.
   of later work; use a concise progress update instead. A terminal response is
   appropriate only after the whole-series definition of done is proven or a
   declared human-review stop condition has been reached.
+- **Terminal-response guard:** before ending any turn during an authorized
+  series run, reconcile `SERIES.md` and `STATE.md`. If any selected prompt is
+  `in_progress`, or any dependency-satisfied prompt is `ready`, do not return a
+  final response: persist the current checkpoint, select/resume that prompt,
+  and continue. A context/tool/session interruption is likewise not a blocker;
+  resume from durable state on the next turn. Never convert an unfinished
+  execution loop into a status-only handoff without a declared stop condition.
+- **Progress communication:** while a long command, test suite, or required
+  read-only work unit is running, send brief commentary updates, but treat
+  them as non-terminal. On every prompt boundary, state the next prompt being
+  started and its purpose rather than asking whether to continue.
 - Stop for human review only when reasonable in-scope remediation cannot
   preserve a normative security invariant; higher-priority sources conflict;
   a new security-critical dependency, material security/API posture change,

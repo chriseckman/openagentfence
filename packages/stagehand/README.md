@@ -8,9 +8,11 @@ peer dependency; `@openagentfence/core` never imports it (ADR-0002).
 - `observe()` responses are strictly bounded and normalized into conservative
   `CanonicalAction` candidates.
 - `act()` executes only the exact structured candidate after one deterministic
-  state-binding/revalidation cycle. A wrapper without a `StagehandStateResolver`
-  is disabled before `act()` is called; it never falls back to natural-language
-  inference.
+  state-binding/revalidation cycle. Core atomically consumes the session-issued
+  authorization immediately before the captured structured candidate reaches
+  Stagehand; no parallel Stagehand authority remains. A wrapper without a
+  `StagehandStateResolver` is disabled before `act()` is called; it never falls
+  back to natural-language inference.
 - A changed target retries once with a new observation and authorization;
   another mutation, an expired intent, malformed candidates, zero/multiple
   authorizations, or an unresolvable state fail closed.
@@ -27,6 +29,11 @@ listing, and WebMCP invocation are explicitly disabled with a typed
 `StagehandSecurityError` and zero framework calls. No Stagehand network surface
 is claimed as enforced or observed because its minimal v4 abstraction exposes
 no independently validated network-effect hook.
+
+Consequently Stagehand has no POST_ACTION observation window for its remaining
+guarded `act()` surface. It is explicitly `unavailable`, never a clean
+post-action result; applications needing deterministic redirect, popup, or
+download comparison must use an adapter with those event hooks.
 
 Form submission, upload, and download are also explicitly disabled. Stagehand
 4.0.1's observed action schema has no form action/method/field metadata, and

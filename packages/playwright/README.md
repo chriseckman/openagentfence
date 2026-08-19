@@ -29,6 +29,14 @@ Playwright; all Playwright-specific behavior stays in this package (ADR-0002).
   Other execution paths are absent from the secure surface; raw page access
   remains the recorded escape hatch.
 
+  After exact execution, the session holds a bounded 25 ms POST_ACTION event
+  window and compares top-level navigation, popup, and download events with
+  the immutable authorized action. Unexpected effects are detected after they
+  occur, traced with stable reason codes, and raise monotonic session risk;
+  this is not rollback or preflight redirect enforcement. An adapter without
+  all required event hooks is recorded as unavailable and restricts subsequent
+  authority rather than reporting a clean result.
+
   Download count is reserved during authorization and download bytes are
   reserved before the metadata is released. Missing MIME/disposition/origin or
   filename metadata, a failed/oversize budget reservation, or a metadata timeout

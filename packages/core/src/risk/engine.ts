@@ -6,6 +6,7 @@ export type RiskSignal =
   | "cross_origin_redirect"
   | "secret_requested"
   | "unrelated_tab"
+  | "unexpected_download"
   | "high_confidence_injection"
   | "critical_finding";
 
@@ -14,6 +15,7 @@ export interface RiskPolicy {
   readonly crossOriginRedirectWeight: number;
   readonly secretRequestedWeight: number;
   readonly unrelatedTabWeight: number;
+  readonly unexpectedDownloadWeight: number;
   readonly restrictedAt: number;
   readonly readOnlyAt: number;
   readonly quarantinedAt: number;
@@ -25,6 +27,7 @@ export const DEFAULT_RISK_POLICY: RiskPolicy = Object.freeze({
   crossOriginRedirectWeight: 20,
   secretRequestedWeight: 50,
   unrelatedTabWeight: 30,
+  unexpectedDownloadWeight: 20,
   restrictedAt: 40,
   readOnlyAt: 80,
   quarantinedAt: 120,
@@ -75,6 +78,8 @@ function weightFor(signal: RiskSignal, policy: RiskPolicy): number {
       return policy.secretRequestedWeight;
     case "unrelated_tab":
       return policy.unrelatedTabWeight;
+    case "unexpected_download":
+      return policy.unexpectedDownloadWeight;
     case "critical_finding":
       return 0;
   }

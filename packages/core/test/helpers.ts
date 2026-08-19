@@ -76,8 +76,9 @@ export function fakeAdapter(overrides: Partial<BrowserAdapter> = {}): BrowserAda
   return {
     capabilities: {
       route: false,
-      downloadEvents: false,
-      popupEvents: false,
+      navigationEvents: true,
+      downloadEvents: true,
+      popupEvents: true,
       screenshot: false,
       ariaSnapshot: false,
     },

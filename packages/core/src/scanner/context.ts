@@ -5,6 +5,7 @@ import type { DataProvenance } from "../contracts/provenance.js";
 import type { RedactionRegistry } from "../trace/redact.js";
 import type { PageObservation } from "../adapter/observation.js";
 import type { CanonicalAction } from "../action/canonical-action.js";
+import type { PostActionObservation } from "../action/post-action.js";
 import type { SecretHandle } from "../secrets/handle-codec.js";
 import type { ScannerPermission } from "./manifest.js";
 import { detectHandles } from "../secrets/handle-codec.js";
@@ -17,6 +18,7 @@ export interface ModelOutput {
 export type PhasePayload =
   | { readonly kind: "observation"; readonly observation: PageObservation }
   | { readonly kind: "proposedAction"; readonly action: CanonicalAction }
+  | { readonly kind: "postAction"; readonly observation: PostActionObservation }
   | { readonly kind: "modelOutput"; readonly output: ModelOutput }
   | { readonly kind: "memoryCandidate"; readonly candidate: unknown }
   | { readonly kind: "egressPayload"; readonly payload: unknown }

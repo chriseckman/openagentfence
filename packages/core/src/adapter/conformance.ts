@@ -22,6 +22,7 @@ export interface AdapterConformanceReport {
 
 const CAPABILITY_FLAGS = [
   "route",
+  "navigationEvents",
   "downloadEvents",
   "popupEvents",
   "screenshot",

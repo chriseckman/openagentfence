@@ -26,6 +26,8 @@ export interface AdapterEvent {
   readonly frameId?: string;
   /** Monotonic adapter-local page revision at the time the event was observed. */
   readonly revision?: number;
+  /** True only when a navigation event came from the top-level page frame. */
+  readonly mainFrame?: boolean;
 }
 
 /**

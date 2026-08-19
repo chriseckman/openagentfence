@@ -6,6 +6,14 @@ import type { TaskContract } from "../contracts/task-contract.js";
 import type { CanonicalAction } from "../action/canonical-action.js";
 import type { ActionIntent } from "../action/intent.js";
 import { isIntentExpired } from "../action/intent.js";
+import {
+  comparePostAction,
+  POST_ACTION_MAX_EVENTS,
+  POST_ACTION_SETTLE_MS,
+  postActionCapabilitiesAvailable,
+  type PostActionObservation,
+  type PostActionStatus,
+} from "../action/post-action.js";
 import { mintAuthorizedAction, type Authorized } from "../action/authorized.js";
 import { stableSerialize } from "../action/state-fingerprint.js";
 import { denyAllResolver } from "../secrets/resolver.js";
@@ -49,6 +57,14 @@ import type { SessionDecision, SessionEvents } from "./events.js";
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 30_000;
 
+interface ActivePostAction {
+  readonly action: CanonicalAction;
+  readonly intent: ActionIntent;
+  readonly startedOrigin: string | undefined;
+  readonly events: AdapterEvent[];
+  status: PostActionStatus;
+}
+
 export interface SecuritySessionInit {
   readonly id: string;
   readonly adapter: BrowserAdapter;
@@ -76,6 +92,16 @@ export interface PerceptionResult {
 export interface BoundAuthorizationResult {
   readonly decision: SessionDecision;
   readonly authorized?: Authorized;
+}
+
+/**
+ * Narrow bridge for adapters which have an exact structured executor but do
+ * not implement the browser event contract. The callback receives no raw
+ * action and is invoked only after core has atomically consumed a
+ * session-issued authorization.
+ */
+export interface ExactActionExecutor {
+  execute(): Promise<unknown>;
 }
 
 /**
@@ -114,7 +140,8 @@ export class SecuritySession {
    * sufficient authority: it must also have been issued by this session's
    * deterministic PRE_ACTION decision and is consumable exactly once.
    */
-  private readonly issuedAuthorizations = new Set<Authorized>();
+  private readonly issuedAuthorizations = new Map<Authorized, string>();
+  private activePostAction: ActivePostAction | undefined;
   private readonly unsubscribeEvents: () => void;
 
   private readonly listeners = new Map<keyof SessionEvents, Set<(event: unknown) => void>>();
@@ -541,22 +568,82 @@ export class SecuritySession {
       traceId: decisionId,
     });
     this.trace.append("authorized_action", { intentId: intent.intentId, decisionId });
-    this.issuedAuthorizations.add(authorized);
+    // Bind the authorization to every firewall-owned input that can change
+    // between decision and side effect: policy, risk, budget, grants, action
+    // identity, and session liveness. This snapshot deliberately excludes
+    // wall-clock churn; expiry is checked independently below.
+    this.issuedAuthorizations.set(authorized, this.approvalState(action));
     return { decision, authorized };
   }
 
   /** Execute only a core-minted authorization through the adapter boundary. */
   async executeAuthorized(authorized: Authorized): Promise<unknown> {
+    return this.executeIssuedAuthorization(authorized, () =>
+      this.adapter.executeAuthorized(authorized, denyAllResolver),
+    );
+  }
+
+  /**
+   * Consume a state-bound authorization through a framework-owned exact
+   * executor which lacks BrowserAdapter event hooks (currently Stagehand).
+   * Such executions are recorded as post-action observation unavailable and
+   * therefore cannot establish a clean post-action state.
+   */
+  async executeAuthorizedWith(
+    authorized: Authorized,
+    executor: ExactActionExecutor,
+  ): Promise<unknown> {
+    return this.executeIssuedAuthorization(authorized, () => executor.execute(), "unavailable");
+  }
+
+  private async executeIssuedAuthorization(
+    authorized: Authorized,
+    execute: () => Promise<unknown>,
+    postActionStatus?: PostActionStatus,
+  ): Promise<unknown> {
     if (this.ended) throw new TypeError("cannot execute an authorization after session end");
-    if (!this.issuedAuthorizations.delete(authorized)) {
+    const issuedState = this.issuedAuthorizations.get(authorized);
+    if (issuedState === undefined) {
       throw new TypeError("authorization was not issued by this session or was already used");
     }
-    const result = await this.adapter.executeAuthorized(authorized, denyAllResolver);
-    this.trace.append("execution", {
-      intentId: authorized.intent.intentId,
-      type: authorized.action.type,
-    });
-    return result;
+    const reason = isIntentExpired(authorized.intent)
+      ? REASON_CODES.action_intent_expired
+      : authorized.policyHash !== this.policy.policyHash
+        ? REASON_CODES.action_policy_mismatch
+        : !this.approvalStateMatches(authorized.action, issuedState)
+          ? REASON_CODES.approval_reauthorization_required
+          : undefined;
+    if (reason !== undefined) {
+      this.issuedAuthorizations.delete(authorized);
+      this.recordRevalidation(reason, authorized.intent.intentId);
+      throw new TypeError(`authorization requires full reauthorization (${reason})`);
+    }
+    // Consume before any framework call. A retry must mint a new decision and
+    // can never patch or replay this authority.
+    this.issuedAuthorizations.delete(authorized);
+    if (this.activePostAction !== undefined) {
+      throw new TypeError("only one post-action observation window may be active per session");
+    }
+    const active: ActivePostAction = {
+      action: authorized.action,
+      intent: authorized.intent,
+      startedOrigin: authorized.intent.target.origin ?? authorized.action.target?.origin,
+      events: [],
+      status:
+        postActionStatus ??
+        (postActionCapabilitiesAvailable(this.adapter.capabilities) ? "complete" : "unavailable"),
+    };
+    this.activePostAction = active;
+    try {
+      const result = await execute();
+      this.trace.append("execution", {
+        intentId: authorized.intent.intentId,
+        type: authorized.action.type,
+      });
+      return result;
+    } finally {
+      await this.completePostAction(active);
+    }
   }
 
   /** Record an adapter's deterministic pre-execution invalidation. */
@@ -649,6 +736,7 @@ export class SecuritySession {
       return this.trace.document();
     }
     this.ended = true;
+    if (this.activePostAction !== undefined) this.activePostAction.status = "cancelled";
     for (const controller of this.approvalControllers) controller.abort();
     this.approvalControllers.clear();
     this.issuedAuthorizations.clear();
@@ -689,6 +777,93 @@ export class SecuritySession {
     }
   }
 
+  private capturePostActionEvent(event: AdapterEvent): void {
+    const active = this.activePostAction;
+    if (active === undefined || active.status !== "complete") return;
+    const rootPageId = active.intent.observation.pageId;
+    const relevant =
+      event.kind === "popup" ||
+      (event.pageId === rootPageId && (event.kind !== "navigation" || event.mainFrame === true));
+    if (!relevant) return;
+    if (active.events.length >= POST_ACTION_MAX_EVENTS) {
+      active.status = "overflow";
+      return;
+    }
+    active.events.push(Object.freeze({ ...event }));
+  }
+
+  private async completePostAction(active: ActivePostAction): Promise<void> {
+    if (this.activePostAction !== active) return;
+    try {
+      if (active.status === "complete") {
+        await new Promise<void>((resolve) => setTimeout(resolve, POST_ACTION_SETTLE_MS));
+      }
+      if (this.ended) active.status = "cancelled";
+      const observation: PostActionObservation = Object.freeze({
+        intentId: active.intent.intentId,
+        action: active.action,
+        intent: active.intent,
+        ...(active.startedOrigin !== undefined ? { startedOrigin: active.startedOrigin } : {}),
+        events: Object.freeze([...active.events]),
+        status: active.status,
+      });
+      const reasons: string[] = [...comparePostAction(observation)];
+      const phase = await runPhase(
+        this.registry,
+        "POST_ACTION",
+        this.buildContext("POST_ACTION", { kind: "postAction", observation }),
+        this.limits,
+      );
+      for (const result of phase.results) {
+        this.trace.append("scan_result", {
+          scanner: result.scanner,
+          verdict: result.verdict,
+          severity: result.severity,
+        });
+        for (const finding of result.findings) {
+          this.trace.append("finding", {
+            id: finding.id,
+            category: finding.category,
+            sourceType: finding.source.type,
+            evidenceHash: hash(finding.evidence),
+          });
+          this.emit("finding", finding);
+        }
+      }
+      if (phase.failures.length > 0) reasons.push(REASON_CODES.scanner_unavailable);
+      this.trace.append("post_action", {
+        intentId: observation.intentId,
+        status: observation.status,
+        eventCount: observation.events.length,
+        ...(reasons.length > 0 ? { reasons } : {}),
+      });
+      for (const reason of reasons) this.applyPostActionRisk(reason);
+    } finally {
+      if (this.activePostAction === active) this.activePostAction = undefined;
+    }
+  }
+
+  private applyPostActionRisk(reason: string): void {
+    switch (reason) {
+      case REASON_CODES.unexpected_redirect:
+      case REASON_CODES.unexpected_origin_change:
+        this.applyRiskSignal("cross_origin_redirect");
+        return;
+      case REASON_CODES.unexpected_tab:
+        this.applyRiskSignal("unrelated_tab");
+        return;
+      case REASON_CODES.unexpected_download:
+        this.applyRiskSignal("unexpected_download");
+        return;
+      case REASON_CODES.post_action_observation_unavailable:
+      case REASON_CODES.post_action_observation_cancelled:
+      case REASON_CODES.post_action_observation_overflow:
+      case REASON_CODES.scanner_unavailable:
+        this.setRisk("RESTRICTED", Math.max(this.score, 40));
+        return;
+    }
+  }
+
   private recordAdapterEvent(event: AdapterEvent): boolean {
     if (event.sessionId !== this.id || this.ended) return event.kind === "popup";
     this.trace.append("adapter_event", {
@@ -698,8 +873,10 @@ export class SecuritySession {
       ...(event.pageId !== undefined ? { pageId: event.pageId } : {}),
       ...(event.frameId !== undefined ? { frameId: event.frameId } : {}),
       ...(event.revision !== undefined ? { revision: event.revision } : {}),
+      ...(event.mainFrame !== undefined ? { mainFrame: event.mainFrame } : {}),
     });
-    if (event.kind === "navigation" && event.origin !== undefined) {
+    this.capturePostActionEvent(event);
+    if (event.kind === "navigation" && event.mainFrame !== false && event.origin !== undefined) {
       this.currentOrigin = event.origin;
     }
     if (event.kind === "popup") {

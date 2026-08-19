@@ -216,6 +216,7 @@ export function playwrightAdapter(
         eventPage: Page,
         eventFrame?: Frame,
         url?: string,
+        mainFrame?: boolean,
       ): void => {
         const value = url ?? eventPage.url();
         const data = {
@@ -225,6 +226,7 @@ export function playwrightAdapter(
           origin: bounded(originOfUrl(value)),
           pageId: pageId(eventPage),
           ...(eventFrame !== undefined ? { frameId: frameId(eventFrame) } : {}),
+          ...(mainFrame !== undefined ? { mainFrame } : {}),
           revision: revision(eventPage),
         };
         if (kind === "navigation") sink.onNavigation(data);
@@ -251,7 +253,7 @@ export function playwrightAdapter(
       const attach = (watchedPage: Page): void => {
         const onFrame = (frame: Frame): void => {
           revisions.set(watchedPage, revision(watchedPage) + 1);
-          event("navigation", watchedPage, frame, frame.url());
+          event("navigation", watchedPage, frame, frame.url(), frame === watchedPage.mainFrame());
         };
         const onDownload = (download: { url(): string }): void =>
           event("download", watchedPage, undefined, download.url());
@@ -353,6 +355,7 @@ function requestMutation(
 function capabilitiesFor(options: PlaywrightAdapterOptions): BrowserAdapterCapabilities {
   return {
     route: options.routeRequests === true,
+    navigationEvents: true,
     downloadEvents: true,
     popupEvents: true,
     screenshot: options.captureScreenshot === true,

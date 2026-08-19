@@ -195,7 +195,8 @@ export function validateTraceEvent(input: unknown): TraceValidationResult {
         (data["pageId"] !== undefined && typeof data["pageId"] !== "string") ||
         (data["frameId"] !== undefined && typeof data["frameId"] !== "string") ||
         (data["revision"] !== undefined &&
-          (!Number.isInteger(data["revision"]) || (data["revision"] as number) < 0))
+          (!Number.isInteger(data["revision"]) || (data["revision"] as number) < 0)) ||
+        (data["mainFrame"] !== undefined && typeof data["mainFrame"] !== "boolean")
       ) {
         fail(errors, "adapter_event must have a known kind and bounded string metadata");
       }
