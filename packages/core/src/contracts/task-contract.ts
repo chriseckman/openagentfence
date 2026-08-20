@@ -1,4 +1,5 @@
 import type { SecretHandleKind } from "../secrets/handle-codec.js";
+import { originOf } from "../action/url.js";
 
 export type NavigationMode = "same-site" | "same-origin" | "allowlist" | "none";
 
@@ -21,6 +22,8 @@ export interface SecretBindingDecl {
   readonly kind: SecretHandleKind;
   readonly origins: readonly string[];
   readonly fieldTypes: readonly string[];
+  readonly selector?: string;
+  readonly formAction?: string;
 }
 
 export interface OriginAllowances {
@@ -197,28 +200,63 @@ export function validateTaskContract(input: unknown): ValidationResult {
       errors.push("taskContract.secrets must be an array");
     } else {
       secrets = [];
-      for (let i = 0; i < secretsInput.length; i += 1) {
+      if (secretsInput.length > 64)
+        errors.push("taskContract.secrets must contain at most 64 bindings");
+      for (let i = 0; i < Math.min(secretsInput.length, 65); i += 1) {
         const item = secretsInput[i];
         if (!isRecord(item)) {
           errors.push(`taskContract.secrets[${i}] must be an object`);
           continue;
         }
+        rejectUnknownKeys(
+          item,
+          ["name", "kind", "origins", "fieldTypes", "selector", "formAction"],
+          `taskContract.secrets[${i}]`,
+          errors,
+        );
         const name = item["name"];
         const kind = item["kind"];
         const origins = item["origins"];
         const fieldTypes = item["fieldTypes"];
-        if (typeof name !== "string" || name.length === 0) {
-          errors.push(`taskContract.secrets[${i}].name must be a non-empty string`);
+        const selector = item["selector"];
+        const formAction = item["formAction"];
+        if (typeof name !== "string" || !/^[A-Za-z0-9._-]{1,96}$/.test(name)) {
+          errors.push(`taskContract.secrets[${i}].name must be a bounded handle name`);
         }
         if (kind !== "SECRET" && kind !== "PII" && kind !== "CREDENTIAL") {
           errors.push(`taskContract.secrets[${i}].kind must be SECRET, PII, or CREDENTIAL`);
         }
-        if (!Array.isArray(origins) || origins.some((o) => typeof o !== "string")) {
-          errors.push(`taskContract.secrets[${i}].origins must be a string array`);
+        if (
+          !Array.isArray(origins) ||
+          origins.length === 0 ||
+          origins.length > 32 ||
+          origins.some((o) => typeof o !== "string" || o.length > 2048 || originOf(o) !== o)
+        ) {
+          errors.push(`taskContract.secrets[${i}].origins must contain 1-32 canonical origins`);
         }
-        if (!Array.isArray(fieldTypes) || fieldTypes.some((f) => typeof f !== "string")) {
-          errors.push(`taskContract.secrets[${i}].fieldTypes must be a string array`);
+        if (
+          !Array.isArray(fieldTypes) ||
+          fieldTypes.length === 0 ||
+          fieldTypes.length > 32 ||
+          fieldTypes.some((f) => typeof f !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(f))
+        ) {
+          errors.push(
+            `taskContract.secrets[${i}].fieldTypes must contain 1-32 bounded field types`,
+          );
         }
+        if (
+          selector !== undefined &&
+          (typeof selector !== "string" || selector.length === 0 || selector.length > 2048)
+        )
+          errors.push(`taskContract.secrets[${i}].selector must be a bounded non-empty string`);
+        if (
+          formAction !== undefined &&
+          (typeof formAction !== "string" ||
+            formAction.length === 0 ||
+            formAction.length > 2048 ||
+            originOf(formAction) === null)
+        )
+          errors.push(`taskContract.secrets[${i}].formAction must be a bounded non-empty URL`);
         if (
           typeof name === "string" &&
           (kind === "SECRET" || kind === "PII" || kind === "CREDENTIAL") &&
@@ -230,6 +268,8 @@ export function validateTaskContract(input: unknown): ValidationResult {
             kind,
             origins: [...origins] as string[],
             fieldTypes: [...fieldTypes] as string[],
+            ...(typeof selector === "string" ? { selector } : {}),
+            ...(typeof formAction === "string" ? { formAction } : {}),
           });
         }
       }

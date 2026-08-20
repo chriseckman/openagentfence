@@ -120,12 +120,16 @@ function run(row: Row) {
         row.det,
         [mkFinding("d", category, { recommendedAction: row.det })],
         {
-          ...(row.sanitized ? { sanitized: "safe" } : {}),
+          ...(row.sanitized ? { sanitized: { value: "safe", provenance: { trust: "web" } } } : {}),
         },
       ),
     );
   } else if (row.sanitized) {
-    results.push(mkScanResult("det", "deterministic", "sanitize", [], { sanitized: "safe" }));
+    results.push(
+      mkScanResult("det", "deterministic", "sanitize", [], {
+        sanitized: { value: "safe", provenance: { trust: "web" } },
+      }),
+    );
   }
   if (row.sem !== undefined) {
     results.push(

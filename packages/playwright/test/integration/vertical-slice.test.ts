@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { OpenAgentFence, validateTraceDocument } from "@openagentfence/core";
 import { defaultScanners } from "@openagentfence/scanners";
 import {
-  expectNoRawSecret,
+  expectNoRawSecretIn,
   fixtureSentinel,
   loadCorpusFile,
   startFixtureServer,
@@ -60,7 +60,8 @@ describe("vertical slice: versioned hidden-DOM corpus (OAF-BROWSER-012)", () => 
     expect(result.findings.every((finding) => finding.provenance.trust === "web")).toBe(true);
     expect(result.assessment.verdict).toBe("RESTRICT");
     expect(session.riskState).toBe("RESTRICTED");
-    expect(result.sanitizedText).not.toContain("evil.example");
+    expect(result.sanitizedText.value).not.toContain("evil.example");
+    expect(result.sanitizedText.provenance.trust).toBe("web");
 
     const decision = await session.authorize({
       type: "NAVIGATE",
@@ -69,7 +70,10 @@ describe("vertical slice: versioned hidden-DOM corpus (OAF-BROWSER-012)", () => 
     });
     expect(decision.verdict).toBe("BLOCK");
     expect(decision.reasons).toEqual(
-      expect.arrayContaining(["destination_not_allowed", "session_restricted"]),
+      expect.arrayContaining([
+        "navigation_instruction_originated_from_untrusted_dom",
+        "session_restricted",
+      ]),
     );
 
     const trace = await session.end();
@@ -77,7 +81,8 @@ describe("vertical slice: versioned hidden-DOM corpus (OAF-BROWSER-012)", () => 
     expect(trace.events[0]?.kind).toBe("session_start");
     expect(trace.events.at(-1)?.kind).toBe("session_end");
     expect(trace.events.some((event) => event.kind === "finding")).toBe(true);
-    expect(expectNoRawSecret(trace, sentinel)).toBe(true);
+    expect(trace.events.some((event) => event.kind === "taint_activation")).toBe(true);
+    expect(expectNoRawSecretIn(trace, sentinel)).toBe(true);
     await writeSafeTraceArtifact(trace);
     expect(corpus.hash).toMatch(/^[0-9a-f]{64}$/);
     await page.close();

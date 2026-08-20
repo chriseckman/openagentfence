@@ -4,6 +4,23 @@
 
 ```ts
 
+import { VaultAdapter } from '@openagentfence/core';
+
+// @public
+export function inMemoryVault(options?: InMemoryVaultOptions): VaultAdapter;
+
+// @public
+export interface InMemoryVaultOptions {
+    // (undocumented)
+    readonly maxEntriesPerSession?: number;
+    // (undocumented)
+    readonly maxValueBytes?: number;
+    // (undocumented)
+    readonly now?: () => number;
+    // (undocumented)
+    readonly ttlMs?: number;
+}
+
 // @public
 export const PACKAGE_NAME = "@openagentfence/vault";
 

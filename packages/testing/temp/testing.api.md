@@ -4,8 +4,8 @@
 
 ```ts
 
-import type { AggregateVerdict } from '@openagentfence/core';
-import type { Finding } from '@openagentfence/core';
+import { AggregateVerdict } from '@openagentfence/core';
+import { Finding } from '@openagentfence/core';
 
 // @public (undocumented)
 export interface CapturedRequest {
@@ -89,6 +89,9 @@ export interface CorpusPage {
 
 // @public
 export function expectNoRawSecret(value: unknown, secret: string): boolean;
+
+// @public
+export function expectNoRawSecretIn(value: unknown, secret: string): boolean;
 
 // @public
 export interface FixtureOrigin {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { egressMatchForms, MAX_EGRESS_VALUE_BYTES } from "../egress/match.js";
 
 declare const REDACTED_EVIDENCE: unique symbol;
 
@@ -13,8 +14,12 @@ function asEvidence(value: string): RedactedEvidence {
   return value as RedactedEvidence;
 }
 
-/** Normalized forms of a secret that must also be redacted (INV-05). */
-function normalizedForms(value: string): string[] {
+/**
+ * Bounded, documented textual representations checked at public artifact
+ * boundaries. This deliberately excludes heuristic transformations that could
+ * create false positives or unbounded expansion.
+ */
+export function secretRedactionForms(value: string): readonly string[] {
   const forms: string[] = [];
   const trimmed = value.trim();
   const lower = value.toLowerCase();
@@ -36,6 +41,12 @@ function normalizedForms(value: string): string[] {
   if (base64 !== value) {
     forms.push(base64);
   }
+  const base64Url = base64.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  if (base64Url !== value) forms.push(base64Url);
+  const nfkc = value.normalize("NFKC");
+  if (nfkc !== value && nfkc.length > 0) forms.push(nfkc);
+  const nfd = value.normalize("NFD");
+  if (nfd !== value && nfd.length > 0) forms.push(nfd);
   return forms;
 }
 
@@ -53,6 +64,7 @@ export class RedactionRegistry implements Redactor {
   private readonly exact = new Set<string>();
   private readonly needles: string[] = [];
   private readonly hashes = new Set<string>();
+  private readonly egressNeedles = new Map<string, Set<string>>();
 
   registerSecret(value: string): void {
     if (value.length === 0) {
@@ -62,17 +74,32 @@ export class RedactionRegistry implements Redactor {
       return;
     }
     this.exact.add(value);
-    for (const form of [value, ...normalizedForms(value)]) {
+    for (const form of [value, ...secretRedactionForms(value)]) {
       if (form.length > 0 && !this.needles.includes(form)) {
         this.needles.push(form);
       }
     }
+    this.needles.sort((a, b) => b.length - a.length);
     this.hashes.add(hash(value));
+    const fingerprint = hash(value);
+    for (const form of egressMatchForms(value)) {
+      let fingerprints = this.egressNeedles.get(form);
+      if (fingerprints === undefined) {
+        fingerprints = new Set();
+        this.egressNeedles.set(form, fingerprints);
+      }
+      fingerprints.add(fingerprint);
+    }
   }
 
   /** True when the given value has been registered as a secret. */
   isSecret(value: string): boolean {
     return this.exact.has(value);
+  }
+
+  /** True if a string contains an exact or documented normalized secret form. */
+  containsSecret(value: string): boolean {
+    return this.needles.some((needle) => value.includes(needle));
   }
 
   redact(input: string): RedactedEvidence {
@@ -88,6 +115,29 @@ export class RedactionRegistry implements Redactor {
   secretFingerprints(): string[] {
     return [...this.hashes];
   }
+
+  /** Match only the narrower D-11 egress forms; trace redaction remains broader. */
+  matchEgress(
+    value: string,
+    signal?: AbortSignal,
+  ): {
+    readonly fingerprints: readonly string[];
+    readonly incomplete: boolean;
+  } {
+    if (signal?.aborted === true || Buffer.byteLength(value, "utf8") > MAX_EGRESS_VALUE_BYTES) {
+      return { fingerprints: [], incomplete: true };
+    }
+    const matches = new Set<string>();
+    for (const [needle, fingerprints] of this.egressNeedles) {
+      if (isAborted(signal)) return { fingerprints: [], incomplete: true };
+      if (value.includes(needle)) for (const fingerprint of fingerprints) matches.add(fingerprint);
+    }
+    return { fingerprints: [...matches], incomplete: false };
+  }
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted ?? false;
 }
 
 /** SHA-256 hex digest, used for content hashes and secret fingerprints. */

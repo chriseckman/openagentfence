@@ -238,24 +238,26 @@ depends only on `core`.
   `GuardModelProvider` *interface* only).
 - **Allowed dependencies:** `core`. No provider packages, no browser
   frameworks.
-- **Forbidden:** network calls except through an injected
-  `GuardModelProvider`; unbounded decoding; access to raw secrets.
+- **Forbidden:** network calls except through the narrow session-owned
+  `SessionGuardClassifier` callback; direct provider access; unbounded decoding;
+  access to raw secrets.
 - **Public API direction:** `defaultScanners()`, individual scanner
   factories with typed options, rule-pack loading.
 
 ### `@openagentfence/providers`
 
 - **Responsibilities:** `GuardModelProvider` adapters: OpenAI-compatible
-  HTTP, Anthropic, Google/Gemini, xAI, OpenCode, Ollama/local, custom
-  callback; the `guardProvider(name, options)` factory; structured-output
-  validation; timeouts, retries, and budget-accounting hooks; redaction
-  before send; response caching keyed by normalized content hash + model +
-  policy version (never caches secrets). The application owns provider
+  HTTP, Anthropic, Google/Gemini, xAI, Ollama/local, custom callback, plus a
+  reserved typed-unavailable OpenCode surface; the `guardProvider(name,
+  options)` factory; structured-output validation; timeouts, explicit
+  separately budgeted fallback, budget-accounting hooks, and redaction before
+  send. P1 response caching keyed by normalized content hash + model + policy
+  version is not part of the delivered P0 gate and never caches secrets. The application owns provider
   selection and options and supplies any provider credential directly to this
   package; `OpenAgentFence` receives only the instantiated provider
   ([ADR-0009](adr/0009-application-owned-provider-runtime-configuration.md)).
-- **Allowed dependencies:** `core`; an HTTP client; optional thin vendor
-  SDKs isolated per adapter entry point so users install only what they use.
+- **Allowed dependencies:** `core` and the built-in `fetch` transport. The P0
+  implementation has no vendor SDK dependency (D-10).
 - **Forbidden:** authorization logic; access to unredacted content or
   browser/user secrets; exposing its transport credential to request content,
   `core`, policy, scanners, findings, events, approvals, traces, or caches;
@@ -269,8 +271,9 @@ depends only on `core`.
   snapshot, screenshots), event hooks (navigation, popup/new page,
   download, request routing), a **secure wrapper** around `Page` / `Locator`
   execution methods that normalizes to `CanonicalAction` and routes through
-  the Action Guard, executor-side secret substitution for `fill` / `type` /
-  `setInputFiles` / headers, and the `session.unsafe.rawPage()` escape hatch.
+  the Action Guard, executor-side secret substitution for exact revalidated
+  `fill` / `type` / `selectOption` sinks, and the `session.unsafe.rawPage()`
+  escape hatch. Handle-bearing uploads and headers are rejected in v0.1.
 - **Allowed dependencies:** `core`; `playwright` as a peer dependency.
 - **Forbidden:** importing Stagehand; scanner logic; policy logic.
 - **Public API direction:** `playwrightAdapter(context | page)`,
@@ -282,9 +285,11 @@ depends only on `core`.
   results to `CanonicalAction[]`; `firewall.authorizeActions(candidates)`;
   a **secure wrapper** (`firewall.wrap(stagehand)`) that performs
   observe -> normalize -> authorize -> act for `act`, gates `extract`
-  outputs through the Perception Guard, covers deterministic page control
-  the same way as the Playwright adapter, supports screenshot-first agents,
+  outputs through the Perception Guard, supports screenshot-first agents,
   and exposes the escape hatch. Isolates all Stagehand version specifics.
+  With pinned Stagehand 4.0.1, deterministic page controls, forms, uploads,
+  downloads, WebMCP, secret sinks, and independent network enforcement are
+  unavailable and fail closed rather than falling through generic `act`.
 - **Allowed dependencies:** `core`; Stagehand as a peer dependency with a
   declared range; optionally the `playwright` adapter for shared page-level
   capture (Q3).
@@ -371,7 +376,7 @@ Browser/page event --normalizes to--> NetworkMutation --checked independently at
 |------|---------------------------|
 | **`SecurityContext`** | Immutable per-invocation input to a scanner. Contains only what the phase needs plus session references. Plugins receive a scoped view: manifest permissions select which fields are populated (`page:visible_text`, `page:hidden_text`, `page:redacted_text`, `page:screenshot`, `action:metadata`, `action:data`, `secrets:handles`). Never contains raw secret values. Carries a deadline and an `AbortSignal`. |
 | **`TrustedIntentContext`** | Restricted, immutable context for an optional P1 Intent Critic. Constructed deterministically from the trusted task, `CanonicalAction`, destination, capability-envelope facts, data classifications, safe provenance metadata, session risk, and prior trusted action summaries. It cannot contain raw web/tool content, screenshots, manifests, decoded attacker payloads, or raw secrets. The P0 contract exists before the critic implementation. |
-| **`SecurityScanner`** | `{ id, phases: SecurityPhase[], priority?, kind: "deterministic" \| "semantic", tier: 0 \| 1 \| 2, scan(ctx): Promise<ScanResult> }` (PRD §11, plus `kind`/`tier`). Tier 0 is deterministic; Tier 1 is a specialized classifier; Tier 2 is an optional BYOK semantic guard. `kind` and `tier` are required so routing and precedence cannot treat probabilistic output as deterministic. Declares timeout expectations and required context permissions. |
+| **`SecurityScanner`** | `{ id, phases: SecurityPhase[], priority?, kind: "deterministic" \| "semantic", tier?: "tier0" \| "tier1" \| "tier2", required?, scan(ctx): Promise<ScanResult> }` (PRD §11, plus `kind`/`tier`). `kind` is required; `defineScanner` resolves an omitted tier from kind and rejects inconsistent pairs. Tier 0 is deterministic; Tier 1 is a specialized classifier; Tier 2 is an optional BYOK semantic guard. `required` records an availability requirement for later high-impact actions. Declares timeout expectations and required context permissions. |
 | **`ScanResult`** | `{ scanner, verdict: allow \| warn \| sanitize \| approve \| block, severity, confidence?, findings, sanitized?, metadata? }` (PRD §11). `verdict` is a per-scanner *recommendation*. `sanitized` replaces the input for downstream consumers only when the orchestrator accepts it. |
 | **`Finding`** | Reproducible evidence (PRD §12): `id, category, title, description, source{type, selector, xpath, origin, frameOrigin, boundingBox}, provenance, evidence (redacted), recommendedAction`, plus optional `severity`/`confidence` that inherit from the parent `ScanResult` when absent. Findings are the *only* channel through which semantic classifiers influence decisions. Never contain raw secrets. |
 | **`RiskAssessment`** | `{ deterministic: Finding[], semantic: Finding[], provenance: Finding[], session: SessionRisk, verdict }` (PRD §15). Built by the aggregator with fixed precedence: critical deterministic block > explicit application policy > secret/data-flow block > session restriction > semantic detection > warning-only heuristics. A semantic "allow" never removes a deterministic block. |
@@ -493,8 +498,10 @@ orchestrator invokes only scanners registered for the current phase.
 Within a phase, scanners run in **priority order** (lower number first) and
 in **kind order**: all `deterministic` scanners complete before any
 `semantic` scanner starts. This is what makes cheap-first routing (§16)
-possible: semantic scanners receive the deterministic findings and may skip
-work when a deterministic critical block already exists.
+possible: semantic tiers are skipped when a deterministic critical block
+already exists. The P0 BYOK scanner independently selects bounded structural
+and heuristic regions from its scoped context; prior finding objects are not
+forwarded into semantic scanner context.
 
 Detector tiers are explicit and stable:
 
@@ -636,11 +643,17 @@ Wrapper behavior (`firewall.wrap(stagehand)`):
   defect because it can infer a different operation. If Stagehand cannot expose
   or execute a single validated structured action for a path, that path is
   **disabled by the wrapper** and reported by `openagentfence doctor`.
+- Handle-bearing `act` candidates remain handle-only through `observe` and are
+  disabled before generic `act(Action)`. Pinned v4 can expose action arguments
+  in framework paths and configured self-healing can re-enter model inference;
+  neither is an approved raw-secret sink.
 - `extract(...)` results pass through the Perception Guard (`PERCEPTION` on
   the source page and `MODEL_OUTPUT` on the extraction) before they are
   returned, tainted `trust: web`.
-- Deterministic page control reachable from Stagehand (Playwright-style page
-  methods) is wrapped identically to the Playwright adapter.
+- Stagehand 4.0.1 does not expose a proven exact, non-model page-control or
+  network-enforcement boundary to this adapter. Those surfaces are disabled;
+  applications that require them use the independently supported Playwright
+  adapter rather than treating Stagehand `act` as equivalent.
 - Screenshot-first mode: the screenshot goes to the primary model; DOM/ARIA
   is analyzed by the firewall independently; hidden DOM text is not sent to
   the primary model. v0.1 does not compare the screenshot with DOM/ARIA or
@@ -673,9 +686,11 @@ The Playwright adapter must be fully usable without Stagehand.
   (mapped to `EXECUTE_SCRIPT`), `context.newPage`, `page.close`; downloads
   and popups via events; `route` for request-level `EGRESS` inspection and
   origin/private-network enforcement where the application enables routing.
-- **Executor-side secrets:** `fill`/`type` with a handle resolves through
-  `SecretResolver` against the target element's origin and field type; a
-  handle in a URL, header, or file path is a block.
+- **Executor-side secrets:** `fill`/`type`/`selectOption` with one whole-value
+  handle resolves through `SecretResolver` after live revalidation against the
+  target element's origin, inferred field type, selector, and form action. A
+  handle in a URL, unsupported operation, upload/file path, or unbound header
+  is a block.
 - **Escape hatch:** identical semantics to the Stagehand adapter.
 - The adapter contains no scanner or policy logic; it converts Playwright
   events/calls into `PageObservation`/`CanonicalAction` and back.
@@ -732,7 +747,11 @@ Rules:
   handles before that content reaches the model, so a page cannot cause a
   raw secret to be re-emitted.
 - Value matching at egress catches raw values that leaked through some other
-  path (exact and normalized forms).
+  path. v0.1 uses the bounded D-11 set only: exact, combined trim/case
+  variants, one URL encoding, and standard Base64. It does not recursively
+  decode, apply Unicode folding, accept user regex, or serialize inspected
+  payload values. A match requires both a trusted destination and an explicit
+  sink/field-type binding; origin alone is insufficient.
 - `RESTRICTED`/`READ_ONLY`/`QUARANTINED` sessions disable *new* sink
   authorizations. In `RESTRICTED`, sinks approved earlier in the session
   remain usable by default; policy may deny them
@@ -938,8 +957,8 @@ remains, the milestone that owns it (see
 | Q9 | **Resolved and expanded (PRD v0.9 §13.9).** Authorized-action egress remains enforced as documented, while the P0 `NetworkMutation` contract independently represents page/script/form/redirect/WebMCP/service-worker traffic. Routing enforcement is opt-in where required; WebSocket/frame and unobservable surfaces remain explicit gaps until proxy integration. `doctor` reports each surface as enforced, observed-only, or unavailable. | PRD §13.9 | M1 contract / M2 adapters / M4 enforcement |
 | Q10 | **Resolved (PRD v0.8 §13.12).** `session.memory.guardWrite(item)` and `guardRead(item)`; storage is application-owned; provenance and content hash persist as sidecar fields. Minimum read enforcement is P0 in OAF-PROV-005 to satisfy INV-07; OAF-PROV-006 adds enhanced cross-session reinspection and policy in P1. | PRD §13.12 | M6 |
 | Q11 | **Resolved (PRD v0.7 §13.11).** `RESTRICTED`: `READ`, `SCROLL`, same-site `NAVIGATE`, same-origin `CLICK`/`TYPE`/`FILL` without secrets, contract `DOWNLOAD`; rest approval/block. `READ_ONLY`: `READ`, `SCROLL`, same-site link `NAVIGATE` only; no forms, typing, or secrets. `QUARANTINED`: observation only. See §12. | PRD §13.11 | M3 |
-| Q12 | **Resolved (PRD v0.6 §36 Phase 5).** OpenAI-compatible, Ollama, OpenCode, and custom callback are on the v0.1 critical path; Anthropic, Google/Gemini, and xAI are parallel P0 tasks off the critical path. | PRD §13.3, §13.16, §36 | M5 |
+| Q12 | **Resolved (PRD v0.6 §36 Phase 5; D-03).** OpenAI-compatible, Ollama, custom callback, Anthropic, Google/Gemini, and xAI have direct-HTTP P0 adapters. OpenCode 1.18.18 lacked a verified tool-free strict-JSON contract and is a documented typed-unavailable optional surface. | PRD §13.3, §13.16, §36 | M5 |
 | Q13 | **Resolved.** Deterministic scanners run concurrently under one phase deadline; sanitizations apply sequentially by priority, later ones operating on already-sanitized text, most-restrictive-wins on overlap (removal beats replacement), each recorded in the trace; semantic scanners run with configurable concurrency (default 2). See §6. Assigned to OAF-CORE-008. | This document §6 | M1 |
 | Q14 | **Resolved (schema).** Trace header carries `schemaVersion` (semver); observations are self-contained (sanitized snapshot + hashes of raw content; raw retention off by default); replay requires the same major and migrates minors. Replay itself remains P1 (OAF-REL-005). See §14. | PRD §13.14, §29.9 | M1 (schema) / M8 (replay, P1) |
-| Q15 | **Resolved (PRD v0.7 §13.16).** Ollama is the default local guard provider. The recommended model is chosen by corpus measurement (recall, FP rate, latency) in M5/M8 and documented with results; a dedicated small injection classifier served locally is evaluated as an alternative to a general small instruct model. Assigned to OAF-GUARD-003. | PRD §34 Decision 4 | M5 |
+| Q15 | **Resolved for transport (PRD v0.7 §13.16; A-01).** Ollama is the local-first guard-provider transport. No model is recommended and no performance claim is made until reproducible OAF-REL-001 corpus measurements exist. | PRD §34 Decision 4 | M5 transport / M8 measurement |
 | Q16 | **Proposed by ADR-0010; PRD v0.9 requires the P0 outcome.** `ActionIntent` binds exact structured actions to inspected browser state; adapters immediately re-resolve/revalidate and reobserve + reauthorize on mismatch. The existing Stagehand authorize-A/execute-B defect is already prohibited by ADR-0002 and is not gated on acceptance. | PRD §13.7; ADR-0010 | Before M3 |

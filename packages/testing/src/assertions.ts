@@ -1,4 +1,4 @@
-import type { AggregateVerdict, Finding } from "@openagentfence/core";
+import { secretRedactionForms, type AggregateVerdict, type Finding } from "@openagentfence/core";
 
 /**
  * Focused assertion helpers (OAF-TEST-001). These express verdict/finding/
@@ -9,6 +9,27 @@ import type { AggregateVerdict, Finding } from "@openagentfence/core";
 /** Assert a serializable object/string contains no raw synthetic secret value. */
 export function expectNoRawSecret(value: unknown, secret: string): boolean {
   return !JSON.stringify(value).includes(secret);
+}
+
+/**
+ * Registry-aware artifact assertion for exact and documented normalized secret
+ * forms. Handles cycles and Error messages without throwing while testing a
+ * leak boundary.
+ */
+export function expectNoRawSecretIn(value: unknown, secret: string): boolean {
+  const seen = new WeakSet();
+  const serialized = JSON.stringify(value, (_key, item: unknown) => {
+    if (item instanceof Error) return { name: item.name, message: item.message };
+    if (typeof item === "object" && item !== null) {
+      if (seen.has(item)) return "[CYCLE]";
+      seen.add(item);
+    }
+    return item;
+  });
+  const text = serialized;
+  return ![secret, ...secretRedactionForms(secret)].some(
+    (form) => form.length > 0 && text.includes(form),
+  );
 }
 
 /** True when any finding has the given category. */

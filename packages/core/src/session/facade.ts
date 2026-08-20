@@ -14,11 +14,14 @@ import { DEFAULT_RESOURCE_LIMITS, type ResourceLimits } from "../orchestrator/li
 import { TRACE_SCHEMA_VERSION, CORE_VERSION } from "../trace/events.js";
 import type { ApprovalHandler } from "./approval.js";
 import { SecuritySession } from "./session.js";
+import type { SessionGuardClassifier, SessionGuardScannerFactory } from "./session.js";
 
 export interface OpenAgentFenceOptions {
   readonly adapter: BrowserAdapter;
   readonly policy?: PolicyEngine;
   readonly scanners?: readonly SecurityScanner[];
+  /** Session-local scanner factories with a budget-owning guard callback. */
+  readonly guardScannerFactories?: readonly SessionGuardScannerFactory[];
   readonly guardModel?: GuardModelProvider;
   readonly vault?: VaultAdapter;
   readonly approvalHandler?: ApprovalHandler;
@@ -39,7 +42,7 @@ export class OpenAgentFence {
   private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly traceSink: TraceSink | undefined;
   private readonly registry = new ScannerRegistry();
-  private readonly redactor = new RedactionRegistry();
+  private readonly guardScannerFactories: readonly SessionGuardScannerFactory[];
   private readonly limits: ResourceLimits;
 
   constructor(options: OpenAgentFenceOptions) {
@@ -50,6 +53,7 @@ export class OpenAgentFence {
     this.approvalHandler = options.approvalHandler;
     this.traceSink = options.trace;
     this.limits = options.limits ?? DEFAULT_RESOURCE_LIMITS;
+    this.guardScannerFactories = Object.freeze([...(options.guardScannerFactories ?? [])]);
     for (const scanner of options.scanners ?? []) {
       this.registry.register(scanner);
     }
@@ -72,7 +76,10 @@ export class OpenAgentFence {
     const contract = result.value;
     const envelope = compileTaskContract(contract);
     const id = randomBytes(8).toString("hex");
-    const trace = new TraceWriter(this.redactor);
+    // Registries are session-local so secret values cannot outlive an ended
+    // session or bleed across concurrent sessions.
+    const redactor = new RedactionRegistry();
+    const trace = new TraceWriter(redactor);
     if (this.traceSink !== undefined) {
       trace.attach(this.traceSink);
     }
@@ -83,19 +90,29 @@ export class OpenAgentFence {
       capabilities: this.adapter.capabilities,
       versions: { schema: TRACE_SCHEMA_VERSION, core: CORE_VERSION },
     });
-    return new SecuritySession({
+    const sessionRegistry = new ScannerRegistry();
+    for (const scanner of this.registry.all()) {
+      sessionRegistry.register(scanner);
+    }
+    const session = new SecuritySession({
       id,
       adapter: this.adapter,
       contract,
       envelope,
       policy: this.policy,
-      registry: this.registry,
-      redactor: this.redactor,
+      registry: sessionRegistry,
+      redactor,
       limits: this.limits,
       ...(this.guardModel !== undefined ? { guardModel: this.guardModel } : {}),
-      ...(this.vault !== undefined ? { vault: this.vault } : {}),
+      ...(this.vault !== undefined ? { vault: this.vault.openSession(id) } : {}),
       ...(this.approvalHandler !== undefined ? { approvalHandler: this.approvalHandler } : {}),
       trace,
     });
+    const classify: SessionGuardClassifier = (request, execution) =>
+      session.classifyWithGuard(request, execution);
+    for (const factory of this.guardScannerFactories) {
+      sessionRegistry.register(factory(classify));
+    }
+    return session;
   }
 }

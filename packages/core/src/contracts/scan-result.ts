@@ -1,6 +1,7 @@
 import type { ScannerVerdict } from "./verdict.js";
 import type { Finding, Severity } from "./finding.js";
 import type { SanitizationSpan } from "../orchestrator/sanitize.js";
+import type { ProvenancedDatum } from "./provenance.js";
 
 export interface ScanResult {
   readonly scanner: string;
@@ -10,7 +11,7 @@ export interface ScanResult {
   readonly confidence?: number;
   readonly findings: readonly Finding[];
   /** Whole-text sanitized reconstruction (replaces the input). */
-  readonly sanitized?: string;
+  readonly sanitized?: ProvenancedDatum<string>;
   /** Span-level redactions applied sequentially; removal wins overlaps. */
   readonly sanitizations?: readonly SanitizationSpan[];
   /** `timed_out` results are recorded as such, never as `allow`. */

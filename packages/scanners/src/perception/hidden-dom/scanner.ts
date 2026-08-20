@@ -1,5 +1,6 @@
 import {
   defineScanner,
+  provenanced,
   type Finding,
   type ScanResult,
   type SecurityContext,
@@ -43,7 +44,7 @@ export function createHiddenDomScanner(): ReturnType<typeof defineScanner> {
         }
         for (const match of scanInjection(text)) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `hidden-dom:${c.node.selector}:${match.ruleId}`,
               category: "hidden_dom_instruction",
               title: "Instruction-like content in hidden DOM",
@@ -67,7 +68,7 @@ export function createHiddenDomScanner(): ReturnType<typeof defineScanner> {
         verdict: findings.length > 0 ? "sanitize" : "allow",
         severity: findings.length > 0 ? "high" : "info",
         findings,
-        sanitized,
+        sanitized: provenanced(sanitized, ctx.provenance),
       };
     },
   });

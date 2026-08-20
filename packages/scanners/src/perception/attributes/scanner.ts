@@ -33,7 +33,7 @@ export function createAttributeScanner(): ReturnType<typeof defineScanner> {
           }
           for (const match of scanInjection(value)) {
             findings.push(
-              makeFinding(ctx.redactor, {
+              makeFinding(ctx, {
                 id: `attributes:${node.selector}:${attr}:${match.ruleId}`,
                 category: "attribute_instruction",
                 title: "Instruction-like content in element attribute",

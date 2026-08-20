@@ -16,10 +16,13 @@ peer dependency; `@openagentfence/core` never imports it (ADR-0002).
 - A changed target retries once with a new observation and authorization;
   another mutation, an expired intent, malformed candidates, zero/multiple
   authorizations, or an unresolvable state fail closed.
-- `extract()` accepts only bounded text and returns `UntrustedContent` with web
-  provenance and `instructionEligible: false` after model-output scanning.
+- `extract()` accepts only bounded text and returns `UntrustedContent` with
+  tool provenance and `instructionEligible: false` after model-output
+  scanning. It cannot acquire application authority from the extraction path.
 - Screenshot-first context contains only the captured screenshot and visible
-  probe text. It does not claim screenshot/DOM semantic comparison.
+  probe text. Visible text is a provenance-bearing firewall value rather than
+  a raw string, and releasing it activates the shared session taint floor. It
+  does not claim screenshot/DOM semantic comparison.
 
 ### Surface coverage, Stagehand 4.0.1 development conformance
 
@@ -44,6 +47,15 @@ exact file payload without exposing a new application-owned locator boundary.
 Those paths remain fail-closed rather than inferred from natural-language act.
 When the deterministic state resolver identifies a form action on an otherwise
 generic click, the wrapper also blocks it before `Stagehand.act()` is called.
+
+Secret-bearing actions are a separate disabled surface. In pinned Stagehand
+4.0.1, generic `act(Action)` can expose action arguments through result/log/error
+paths and configured self-healing can invoke a model after a failed structured
+action. OpenAgentFence therefore permits `observe()` to see only the opaque
+handle and throws `unsupported_secret_sink` before `act()` receives the action.
+No Stagehand fill/type/header/file/message sink currently claims raw-secret
+substitution. A future claim requires an independently state-bound public
+locator bridge with zero model calls and leak conformance.
 
 The public peer range is `^4.0.0`; compile-time conformance is pinned to 4.0.1.
 Raw framework access remains an application escape hatch and must be recorded

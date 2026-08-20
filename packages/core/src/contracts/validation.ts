@@ -1,6 +1,6 @@
 import type { BoundingBox, Finding, FindingSource, Severity } from "./finding.js";
 import type { ScanResult } from "./scan-result.js";
-import type { DataProvenance, TrustLevel } from "./provenance.js";
+import { provenanced, validateDataProvenance } from "./provenance.js";
 import type { ScannerVerdict } from "./verdict.js";
 import type { RedactedEvidence } from "../trace/redact.js";
 import type { SanitizationSpan } from "../orchestrator/sanitize.js";
@@ -17,7 +17,6 @@ const FINDING_SOURCE_TYPES = [
 ] as const;
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 const SCANNER_VERDICTS = ["allow", "warn", "sanitize", "approve", "block"] as const;
-const TRUST_LEVELS = ["user", "application", "web", "tool", "memory"] as const;
 const KINDS = ["deterministic", "semantic"] as const;
 
 const FINDING_KEYS = new Set([
@@ -35,14 +34,6 @@ const FINDING_KEYS = new Set([
 
 const SOURCE_KEYS = new Set(["type", "selector", "xpath", "origin", "frameOrigin", "boundingBox"]);
 const BOX_KEYS = new Set(["x", "y", "width", "height"]);
-const PROVENANCE_KEYS = new Set([
-  "trust",
-  "origin",
-  "frameOrigin",
-  "pageId",
-  "elementId",
-  "timestamp",
-]);
 const SCAN_RESULT_KEYS = new Set([
   "scanner",
   "kind",
@@ -56,7 +47,7 @@ const SCAN_RESULT_KEYS = new Set([
   "metadata",
 ]);
 
-const SANITIZATION_SPAN_KEYS = new Set(["start", "end", "replacement"]);
+const SANITIZATION_SPAN_KEYS = new Set(["start", "end", "replacement", "provenance"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -129,28 +120,6 @@ function validateFindingSource(value: unknown): FindingSource | null {
   };
 }
 
-function validateProvenance(value: unknown): DataProvenance | null {
-  if (!isRecord(value) || !hasOnlyKeys(value, PROVENANCE_KEYS)) {
-    return null;
-  }
-  if (!isIn(value["trust"], TRUST_LEVELS)) {
-    return null;
-  }
-  for (const key of ["origin", "frameOrigin", "pageId", "elementId", "timestamp"]) {
-    if (value[key] !== undefined && typeof value[key] !== "string") {
-      return null;
-    }
-  }
-  return {
-    trust: value["trust"] as TrustLevel,
-    ...(value["origin"] !== undefined ? { origin: value["origin"] as string } : {}),
-    ...(value["frameOrigin"] !== undefined ? { frameOrigin: value["frameOrigin"] as string } : {}),
-    ...(value["pageId"] !== undefined ? { pageId: value["pageId"] as string } : {}),
-    ...(value["elementId"] !== undefined ? { elementId: value["elementId"] as string } : {}),
-    ...(value["timestamp"] !== undefined ? { timestamp: value["timestamp"] as string } : {}),
-  };
-}
-
 /**
  * Runtime schema validation for a `Finding` (strict unknown-field rejection).
  * The evidence brand is a construction-time invariant; this validator confirms
@@ -186,7 +155,7 @@ export function validateFinding(input: unknown): Finding | null {
   if (source === null) {
     return null;
   }
-  const provenance = validateProvenance(input["provenance"]);
+  const provenance = validateDataProvenance(input["provenance"]);
   if (provenance === null) {
     return null;
   }
@@ -246,9 +215,9 @@ export function validateScanResult(input: unknown): ScanResult | null {
   if (input["confidence"] !== undefined && !isConfidence(input["confidence"])) {
     return null;
   }
-  if (input["sanitized"] !== undefined && typeof input["sanitized"] !== "string") {
-    return null;
-  }
+  const sanitized =
+    input["sanitized"] === undefined ? undefined : validateProvenancedString(input["sanitized"]);
+  if (input["sanitized"] !== undefined && sanitized === null) return null;
   const sanitizations = input["sanitizations"];
   if (sanitizations !== undefined) {
     if (!Array.isArray(sanitizations)) {
@@ -273,7 +242,7 @@ export function validateScanResult(input: unknown): ScanResult | null {
     severity: severity as Severity,
     findings: validatedFindings,
     ...(input["confidence"] !== undefined ? { confidence: input["confidence"] as number } : {}),
-    ...(input["sanitized"] !== undefined ? { sanitized: input["sanitized"] as string } : {}),
+    ...(sanitized !== undefined && sanitized !== null ? { sanitized } : {}),
     ...(sanitizations !== undefined
       ? { sanitizations: sanitizations.map((s) => s as SanitizationSpan) }
       : {}),
@@ -291,14 +260,22 @@ function validateSanitizationSpan(value: unknown): SanitizationSpan | null {
   const start = value["start"];
   const end = value["end"];
   const replacement = value["replacement"];
+  const provenance = validateDataProvenance(value["provenance"]);
   if (typeof start !== "number" || !Number.isInteger(start) || start < 0) {
     return null;
   }
   if (typeof end !== "number" || !Number.isInteger(end) || end < start) {
     return null;
   }
-  if (typeof replacement !== "string") {
+  if (typeof replacement !== "string" || provenance === null) {
     return null;
   }
-  return { start, end, replacement };
+  return { start, end, replacement, provenance };
+}
+
+function validateProvenancedString(value: unknown) {
+  if (!isRecord(value) || !hasOnlyKeys(value, new Set(["value", "provenance"]))) return null;
+  if (typeof value["value"] !== "string") return null;
+  const provenance = validateDataProvenance(value["provenance"]);
+  return provenance === null ? null : provenanced(value["value"], provenance);
 }

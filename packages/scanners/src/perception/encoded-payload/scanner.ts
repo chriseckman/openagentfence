@@ -45,7 +45,7 @@ export function createEncodedPayloadScanner(): ReturnType<typeof defineScanner> 
         );
         if (decoded.status === "refused") {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `encoded:${node.selector}:limit:${decoded.reason ?? "unknown"}`,
               category: "encoded_payload_limit",
               title: "Encoded payload could not be safely normalized",
@@ -66,7 +66,7 @@ export function createEncodedPayloadScanner(): ReturnType<typeof defineScanner> 
         }
         for (const match of scanInjection(decoded.text)) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `encoded:${node.selector}:${match.ruleId}`,
               category: "encoded_instruction",
               title: "Instruction-like content in encoded payload",

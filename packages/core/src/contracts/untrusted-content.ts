@@ -1,5 +1,5 @@
 import { hash } from "../trace/redact.js";
-import type { DataProvenance, TrustLevel } from "./provenance.js";
+import { validateDataProvenance, type DataProvenance, type TrustLevel } from "./provenance.js";
 
 /**
  * Sanitized, provenance-preserving wrapper for untrusted page/tool/memory
@@ -40,24 +40,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validateUntrustedProvenance(value: unknown): DataProvenance | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const trust = value["trust"];
-  if (typeof trust !== "string" || !UNTRUSTED_TRUST.includes(trust as TrustLevel)) {
-    return null;
-  }
-  const out: Record<string, unknown> = { trust };
-  for (const key of ["origin", "frameOrigin", "pageId", "elementId", "timestamp"]) {
-    const field = value[key];
-    if (field !== undefined) {
-      if (typeof field !== "string") {
-        return null;
-      }
-      out[key] = field;
-    }
-  }
-  return out as unknown as DataProvenance;
+  const provenance = validateDataProvenance(value);
+  return provenance !== null && UNTRUSTED_TRUST.includes(provenance.trust) ? provenance : null;
 }
 
 /** Runtime validation of untrusted content (strict, unknown-key rejection). */

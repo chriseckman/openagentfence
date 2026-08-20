@@ -36,7 +36,7 @@ export function createUrlScanner(): ReturnType<typeof defineScanner> {
           scheme === "http" || scheme === "https" || href.startsWith("//");
         if (scheme !== undefined && scheme !== "http" && scheme !== "https") {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `url:${index}:unsafe-scheme`,
               category: "unsafe_scheme_link",
               title: "Unsafe URL scheme in link",
@@ -52,7 +52,7 @@ export function createUrlScanner(): ReturnType<typeof defineScanner> {
         }
         if (hasNetworkAuthority && isPrivateNetworkDestination(resolvedHref)) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `url:${index}:private`,
               category: "private_network_link",
               title: "Link to a private/local network address",
@@ -75,7 +75,7 @@ export function createUrlScanner(): ReturnType<typeof defineScanner> {
           link.text.trim().length > 0
         ) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `url:${index}:mismatch`,
               category: "link_text_host_mismatch",
               title: "Link text and destination host differ",

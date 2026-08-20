@@ -113,6 +113,14 @@ describe("perception scanner acceptance closure", () => {
       cpuUsage.mockReturnValueOnce({ user: 0, system: 0 });
       cpuUsage.mockReturnValue({ user: 20_001, system: 0 });
       expect(decodeIterative(nested).reason).toBe("deadline_exceeded");
+
+      // Process CPU is intentionally shared by Node workers. A deadline seen
+      // only at the final bounded layer must retain the structural refusal.
+      cpuUsage.mockReset();
+      cpuUsage.mockReturnValueOnce({ user: 0, system: 0 });
+      for (let call = 0; call < 7; call += 1) cpuUsage.mockReturnValueOnce({ user: 0, system: 0 });
+      cpuUsage.mockReturnValue({ user: 20_001, system: 0 });
+      expect(decodeIterative(nested).reason).toBe("depth_exhausted");
     } finally {
       cpuUsage.mockRestore();
     }

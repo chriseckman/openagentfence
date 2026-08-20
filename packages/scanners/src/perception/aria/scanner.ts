@@ -41,7 +41,7 @@ export function createAriaScanner(): ReturnType<typeof defineScanner> {
         const text = candidate.join(" ");
         for (const match of scanInjection(text)) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `aria:${node.selector}:${match.ruleId}`,
               category: "aria_instruction",
               title: "Instruction-like accessibility content",

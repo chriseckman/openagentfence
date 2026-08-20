@@ -76,7 +76,7 @@ const BASE_SCAN_RESULT: Record<string, unknown> = {
   severity: "high",
   findings: [BASE_FINDING],
   confidence: 0.8,
-  sanitized: "visible text only",
+  sanitized: { value: "visible text only", provenance: { trust: "web" } },
   timedOut: false,
   metadata: { durationMs: 3 },
 };
@@ -84,6 +84,10 @@ const BASE_SCAN_RESULT: Record<string, unknown> = {
 export const VALID_SCAN_RESULTS: readonly unknown[] = [
   { scanner: "s", kind: "deterministic", verdict: "allow", severity: "info", findings: [] },
   BASE_SCAN_RESULT,
+  {
+    ...BASE_SCAN_RESULT,
+    sanitizations: [{ start: 0, end: 2, replacement: "", provenance: { trust: "web" } }],
+  },
 ];
 
 export const INVALID_SCAN_RESULTS: readonly unknown[] = [
@@ -96,6 +100,12 @@ export const INVALID_SCAN_RESULTS: readonly unknown[] = [
   { ...BASE_SCAN_RESULT, findings: "not-an-array" },
   { ...BASE_SCAN_RESULT, findings: [null] },
   { ...BASE_SCAN_RESULT, confidence: 5 },
+  { ...BASE_SCAN_RESULT, sanitized: "unlabelled text" },
+  { ...BASE_SCAN_RESULT, sanitized: { value: "text" } },
+  {
+    ...BASE_SCAN_RESULT,
+    sanitizations: [{ start: 0, end: 2, replacement: "" }],
+  },
   { ...BASE_SCAN_RESULT, timedOut: "yes" },
   { ...BASE_SCAN_RESULT, extraField: 1 },
 ];

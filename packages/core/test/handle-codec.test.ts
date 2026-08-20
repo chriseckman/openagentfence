@@ -6,7 +6,7 @@ describe("secret handle codec", () => {
     const h = mintHandle("SECRET", "api_key");
     expect(h.kind).toBe("SECRET");
     expect(h.name).toBe("api_key");
-    expect(h.id).toMatch(/^[0-9a-f]{8}$/);
+    expect(h.id).toMatch(/^[0-9a-f]{32}$/);
     expect(parseHandle(serializeHandle(h))).toEqual(h);
   });
 
@@ -14,10 +14,16 @@ describe("secret handle codec", () => {
     expect(parseHandle("not a handle")).toBeNull();
     expect(parseHandle("<SECRET:name>")).toBeNull();
     expect(parseHandle("<BOGUS:name:id>")).toBeNull();
+    expect(parseHandle("<SECRET:has space:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>")).toBeNull();
+    expect(parseHandle("<SECRET:name:short>")).toBeNull();
+    expect(() =>
+      serializeHandle({ kind: "SECRET", name: "bad name", id: "a".repeat(32) }),
+    ).toThrow();
+    expect(() => mintHandle("SECRET", "bad name")).toThrow();
   });
 
   it("finds handles inside URLs, form data, headers, paths, and nested objects", () => {
-    const handle = "<SECRET:vendor_password:abcdef12>";
+    const handle = "<SECRET:vendor_password:abcdef1234567890abcdef1234567890>";
     const data = {
       url: `https://example.com/?token=${handle}`,
       headers: { authorization: `Bearer ${handle}` },
@@ -32,5 +38,6 @@ describe("secret handle codec", () => {
 
   it("does not match a plain string without a handle", () => {
     expect(detectHandles("hello world")).toEqual([]);
+    expect(detectHandles([["<SECRET:x:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>"]], 0)).toEqual([]);
   });
 });

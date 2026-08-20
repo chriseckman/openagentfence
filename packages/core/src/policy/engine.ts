@@ -30,4 +30,9 @@ export interface PolicyEngine {
 
   /** Optional static destination constraints; absence retains core secure defaults. */
   readonly destinationRules?: DestinationRules;
+
+  /** Static narrowing for secret use after the session becomes restricted. */
+  readonly secretResolution?: {
+    readonly restrictedMode: "keep_approved_sinks" | "deny_all";
+  };
 }

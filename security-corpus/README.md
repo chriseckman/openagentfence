@@ -8,7 +8,9 @@ Adversarial and benign fixtures for OpenAgentFence v0.1 verification.
 - `hidden-dom/` — hidden-DOM attack/benign HTML fixtures used by the M2
   vertical slice.
 - `aria/`, `encoding/`, `navigation/`, and `benign/` â€” M2 scanner-closure
-  fixtures. M7 expands their breadth and adds exfiltration/memory suites.
+  fixtures; `exfiltration/` and `network-mutation/` hold targeted M4/M5
+  control cases. M7 expands corpus breadth, adds the executable runner and
+  benchmarks, and adds the remaining memory suites.
 
 ## Corpus-case format
 

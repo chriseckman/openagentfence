@@ -18,6 +18,19 @@ export function validateGuardClassification(input: unknown): GuardClassification
     return null;
   }
   const record = input as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== 4 ||
+    keys.some(
+      (key) =>
+        key !== "promptInjection" &&
+        key !== "confidence" &&
+        key !== "categories" &&
+        key !== "recommendedVerdict",
+    )
+  ) {
+    return null;
+  }
   const promptInjection = record["promptInjection"];
   const confidence = record["confidence"];
   const categories = record["categories"];
@@ -33,7 +46,11 @@ export function validateGuardClassification(input: unknown): GuardClassification
   ) {
     return null;
   }
-  if (!Array.isArray(categories) || categories.some((c) => typeof c !== "string")) {
+  if (
+    !Array.isArray(categories) ||
+    categories.length > 32 ||
+    categories.some((category) => typeof category !== "string" || category.length > 128)
+  ) {
     return null;
   }
   if (

@@ -218,7 +218,10 @@ function validateDocument(
     "internal_network_ranges",
   ]);
   const actions = objectSection(record, "actions", path, depth, state, errors, undefined);
-  const secrets = objectSection(record, "secrets", path, depth, state, errors, ["resolution"]);
+  const secrets = objectSection(record, "secrets", path, depth, state, errors, [
+    "resolution",
+    "restricted_mode",
+  ]);
   const injection = objectSection(record, "injection", path, depth, state, errors, [
     "high_confidence",
     "critical",
@@ -306,6 +309,13 @@ function validateDocument(
     secrets["resolution"] !== "executor_only"
   )
     errors.push(`${path}.secrets.resolution: must be executor_only`);
+  if (
+    secrets !== undefined &&
+    secrets["restricted_mode"] !== undefined &&
+    secrets["restricted_mode"] !== "keep_approved_sinks" &&
+    secrets["restricted_mode"] !== "deny_all"
+  )
+    errors.push(`${path}.secrets.restricted_mode: invalid value`);
   if (injection !== undefined) {
     if (
       injection["high_confidence"] !== undefined &&
@@ -360,9 +370,16 @@ function validateScanners(
   for (const [name, config] of Object.entries(input)) {
     const scanner = recordAt(config, `${path}.${name}`, depth, state, errors);
     if (scanner === undefined) continue;
-    rejectUnknown(scanner, ["enabled", "rules"], `${path}.${name}`, errors);
+    rejectUnknown(scanner, ["enabled", "rules", "patterns"], `${path}.${name}`, errors);
     if (scanner["enabled"] !== undefined && typeof scanner["enabled"] !== "boolean")
       errors.push(`${path}.${name}.enabled: must be boolean`);
+    validateSecretPatterns(
+      scanner["patterns"],
+      `${path}.${name}.patterns`,
+      depth + 1,
+      state,
+      errors,
+    );
     const rules = scanner["rules"];
     if (rules !== undefined) {
       const ruleRecord = recordAt(rules, `${path}.${name}.rules`, depth + 1, state, errors);
@@ -435,6 +452,57 @@ function validateScanners(
     if (mode !== undefined && mode !== "warn" && mode !== "block")
       errors.push(`${path}.mode: must be warn or block`);
   }
+}
+
+function validateSecretPatterns(
+  input: unknown,
+  path: string,
+  depth: number,
+  state: { count: number },
+  errors: string[],
+): void {
+  if (input === undefined) return;
+  if (!Array.isArray(input) || input.length > 32) {
+    errors.push(`${path}: must be an array with at most 32 entries`);
+    return;
+  }
+  input.forEach((raw, index) => {
+    const item = recordAt(raw, `${path}[${index}]`, depth + 1, state, errors);
+    if (item === undefined) return;
+    rejectUnknown(
+      item,
+      ["id", "prefix", "alphabet", "min_length", "max_length", "kind"],
+      `${path}[${index}]`,
+      errors,
+    );
+    if (typeof item["id"] !== "string" || !/^[a-z0-9_.-]{1,64}$/.test(item["id"]))
+      errors.push(`${path}[${index}].id: invalid bounded identifier`);
+    if (typeof item["prefix"] !== "string" || !/^[A-Za-z0-9_.-]{1,32}$/.test(item["prefix"]))
+      errors.push(`${path}[${index}].prefix: invalid literal prefix`);
+    if (
+      typeof item["alphabet"] !== "string" ||
+      !["alphanumeric", "base64url", "hex"].includes(item["alphabet"])
+    )
+      errors.push(`${path}[${index}].alphabet: invalid alphabet`);
+    const min = item["min_length"];
+    const max = item["max_length"];
+    const prefixLength = typeof item["prefix"] === "string" ? item["prefix"].length : 4097;
+    if (
+      typeof min !== "number" ||
+      typeof max !== "number" ||
+      !Number.isInteger(min) ||
+      !Number.isInteger(max) ||
+      min < prefixLength ||
+      max < min ||
+      max > 4096
+    )
+      errors.push(`${path}[${index}]: invalid length bounds`);
+    if (
+      item["kind"] !== undefined &&
+      (typeof item["kind"] !== "string" || !["SECRET", "PII", "CREDENTIAL"].includes(item["kind"]))
+    )
+      errors.push(`${path}[${index}].kind: invalid handle kind`);
+  });
 }
 
 function validateSuppressions(

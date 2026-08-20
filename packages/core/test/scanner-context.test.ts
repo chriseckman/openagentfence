@@ -41,7 +41,7 @@ describe("scoped context views (least privilege)", () => {
   it("omits observation and action data when only action:metadata is granted", () => {
     const ctx = mkContext("PRE_ACTION", {
       kind: "proposedAction",
-      action: mkAction("FILL", { data: "<SECRET:api:abc>" }),
+      action: mkAction("FILL", { data: "<SECRET:api:abcdefabcdefabcdefabcdefabcdefab>" }),
     });
     const view = buildScopedView(ctx, ["action:metadata"]);
     expect(view.observation).toBeUndefined();
@@ -53,7 +53,7 @@ describe("scoped context views (least privilege)", () => {
   it("includes handles only with secrets:handles permission", () => {
     const ctx = mkContext("PRE_ACTION", {
       kind: "proposedAction",
-      action: mkAction("FILL", { data: "<SECRET:api:abc>" }),
+      action: mkAction("FILL", { data: "<SECRET:api:abcdefabcdefabcdefabcdefabcdefab>" }),
     });
     expect(buildScopedView(ctx, ["action:metadata"]).handles).toBeUndefined();
     expect(buildScopedView(ctx, ["secrets:handles"]).handles?.length).toBe(1);
@@ -75,5 +75,17 @@ describe("scoped context views (least privilege)", () => {
     const snapshot = view.observation?.["ariaSnapshot"];
     expect(snapshot).toBeDefined();
     expect(String(snapshot)).not.toContain("secret-token-1234");
+  });
+
+  it("redacts registered values before action data reaches a plugin", () => {
+    const secret = "plugin-egress-sentinel-9821";
+    const ctx = mkContext("PRE_ACTION", {
+      kind: "proposedAction",
+      action: mkAction("MESSAGE", { data: { nested: [secret] } }),
+    });
+    ctx.redactor.registerSecret(secret);
+    const view = buildScopedView(ctx, ["action:data"]);
+    expect(JSON.stringify(view.action)).not.toContain(secret);
+    expect(JSON.stringify(view.action)).toContain("[REDACTED]");
   });
 });

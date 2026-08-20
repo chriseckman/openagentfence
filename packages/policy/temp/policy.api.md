@@ -77,6 +77,14 @@ export interface PolicyDocument {
     // (undocumented)
     readonly scanners?: Readonly<Record<string, {
         readonly enabled?: boolean;
+        readonly patterns?: readonly {
+            readonly id: string;
+            readonly prefix: string;
+            readonly alphabet: "alphanumeric" | "base64url" | "hex";
+            readonly min_length: number;
+            readonly max_length: number;
+            readonly kind?: "SECRET" | "PII" | "CREDENTIAL";
+        }[];
         readonly rules?: Readonly<Record<string, {
             readonly threshold?: number;
             readonly mode?: "warn" | "block";
@@ -89,6 +97,7 @@ export interface PolicyDocument {
     // (undocumented)
     readonly secrets?: {
         readonly resolution?: "executor_only";
+        readonly restricted_mode?: "keep_approved_sinks" | "deny_all";
     };
     // (undocumented)
     readonly suppressions?: readonly {

@@ -1,4 +1,4 @@
-export const TRACE_SCHEMA_VERSION = "1.0.0";
+export const TRACE_SCHEMA_VERSION = "1.4.0";
 
 /**
  * Version of `@openagentfence/core`, recorded in session-start traces. Kept in
@@ -9,6 +9,8 @@ export const CORE_VERSION = "0.0.0";
 export const TRACE_EVENT_KINDS = [
   "session_start",
   "observation",
+  "taint_activation",
+  "trusted_instruction_claim",
   "finding",
   "scan_result",
   "proposed_action",
@@ -25,6 +27,8 @@ export const TRACE_EVENT_KINDS = [
   "adapter_event",
   "authorized_action",
   "action_revalidation",
+  "secret_resolution",
+  "egress_inspection",
   "session_end",
 ] as const;
 

@@ -15,17 +15,26 @@
       "type": "array",
       "items": { "$ref": "finding.schema.json" }
     },
-    "sanitized": { "type": "string" },
+    "sanitized": {
+      "type": "object",
+      "required": ["value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string" },
+        "provenance": { "$ref": "finding.schema.json#/properties/provenance" }
+      }
+    },
     "sanitizations": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["start", "end", "replacement"],
+        "required": ["start", "end", "replacement", "provenance"],
         "additionalProperties": false,
         "properties": {
           "start": { "type": "integer", "minimum": 0 },
           "end": { "type": "integer", "minimum": 0 },
-          "replacement": { "type": "string" }
+          "replacement": { "type": "string" },
+          "provenance": { "$ref": "finding.schema.json#/properties/provenance" }
         }
       }
     },

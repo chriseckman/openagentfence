@@ -20,6 +20,8 @@ export interface SecurityScanner {
   readonly tier?: DetectorTier;
   readonly priority?: number;
   readonly timeoutMs?: number;
+  /** Availability is required before later high-impact session actions. */
+  readonly required?: boolean;
   readonly permissions?: readonly ScannerPermission[];
   scan(ctx: SecurityContext): Promise<ScanResult>;
 }

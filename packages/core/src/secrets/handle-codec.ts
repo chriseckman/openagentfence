@@ -15,7 +15,9 @@ export interface SecretHandle {
   readonly id: string;
 }
 
-const HANDLE_PATTERN = /<([A-Z]+):([^:>]+):([^:>]+)>/g;
+const HANDLE_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,96}$/;
+const HANDLE_ID_PATTERN = /^[a-f0-9]{32}$/;
+const HANDLE_PATTERN = /<([A-Z]+):([A-Za-z0-9_.-]{1,96}):([a-f0-9]{32})>/g;
 
 /** Parse a handle literal; returns null when the string is not exactly one handle. */
 export function parseHandle(text: string): SecretHandle | null {
@@ -33,16 +35,25 @@ export function parseHandle(text: string): SecretHandle | null {
   if (!(HANDLE_KINDS as readonly string[]).includes(kind)) {
     return null;
   }
+  if (!HANDLE_NAME_PATTERN.test(name) || !HANDLE_ID_PATTERN.test(id)) {
+    return null;
+  }
   return { kind: kind as SecretHandleKind, name, id };
 }
 
 export function serializeHandle(handle: SecretHandle): string {
+  if (!HANDLE_NAME_PATTERN.test(handle.name) || !HANDLE_ID_PATTERN.test(handle.id)) {
+    throw new TypeError("invalid secret handle");
+  }
   return `<${handle.kind}:${handle.name}:${handle.id}>`;
 }
 
 /** Mint a handle with a random short id (used by vault implementations). */
 export function mintHandle(kind: SecretHandleKind, name: string): SecretHandle {
-  return { kind, name, id: randomBytes(4).toString("hex") };
+  if (!HANDLE_NAME_PATTERN.test(name)) {
+    throw new TypeError("secret handle name must use up to 96 letters, digits, '.', '_' or '-'");
+  }
+  return { kind, name, id: randomBytes(16).toString("hex") };
 }
 
 /**

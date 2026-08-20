@@ -35,6 +35,9 @@ export function createPolicyEngine(document: ValidatedPolicyDocument): PolicyEng
   return Object.freeze({
     policyHash,
     destinationRules,
+    secretResolution: Object.freeze({
+      restrictedMode: document.secrets?.restricted_mode ?? "keep_approved_sinks",
+    }),
     evaluate(input: PolicyEvaluationInput): PolicyDecision {
       const envelope = input.envelope.evaluate(input.action);
       if (!envelope.allowed)

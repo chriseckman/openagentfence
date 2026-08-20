@@ -25,6 +25,7 @@ export type {
 
 export {
   expectNoRawSecret,
+  expectNoRawSecretIn,
   hasFindingCategory,
   isBlockingVerdict,
   reasonsOf,

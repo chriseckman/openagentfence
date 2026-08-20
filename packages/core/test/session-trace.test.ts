@@ -6,6 +6,7 @@ import {
   RedactionRegistry,
   TraceWriter,
   DEFAULT_RESOURCE_LIMITS,
+  DEFAULT_NETWORK_CAPABILITIES,
   secureDefaultEnvelope,
   secureDefaultPolicyEngine,
   validateTraceDocument,
@@ -86,10 +87,22 @@ function makeSession(
 const SECRET = "s3cr3t-token";
 
 describe("session trace metadata and evidence", () => {
+  it("redacts every plugin-controlled finding field before returning or emitting it", async () => {
+    const redactor = new RedactionRegistry();
+    redactor.registerSecret(SECRET);
+    const { session, trace } = makeSession(redactor, { scanner: blockScanner(SECRET) });
+    const result = await session.observe();
+    const publicFinding = result.findings[0];
+    expect(JSON.stringify(publicFinding)).not.toContain(SECRET);
+    expect(JSON.stringify(trace.document())).not.toContain(SECRET);
+    expect(publicFinding?.source.origin).toContain("[REDACTED]");
+  });
+
   it("records truthful capabilities, policy hash, and versions at session start", async () => {
     const adapter = fakeAdapter({
       capabilities: {
         route: true,
+        network: DEFAULT_NETWORK_CAPABILITIES,
         navigationEvents: true,
         downloadEvents: false,
         popupEvents: true,
@@ -144,8 +157,33 @@ describe("session trace metadata and evidence", () => {
       "proposed_action",
       "canonical_action",
       "scan_result",
+      "scan_result",
+      "scan_result",
+      "scan_result",
       "finding",
       "policy_decision",
+    ]);
+    expect(
+      trace
+        .document()
+        .events.slice(3, 6)
+        .map((event) => event.data),
+    ).toEqual([
+      { phase: "PRE_ACTION", tier: "tier0", status: "invoked", scannerCount: 1 },
+      {
+        phase: "PRE_ACTION",
+        tier: "tier1",
+        status: "skipped",
+        scannerCount: 0,
+        skipReason: "deterministic_critical",
+      },
+      {
+        phase: "PRE_ACTION",
+        tier: "tier2",
+        status: "skipped",
+        scannerCount: 0,
+        skipReason: "deterministic_critical",
+      },
     ]);
   });
 
@@ -365,7 +403,7 @@ describe("approval boundary via the session", () => {
     };
     const handler: ApprovalHandler = {
       requestApproval: async () => {
-        (action as unknown as { data: { amount: number } }).data.amount = 99;
+        (action as unknown as { data: { value: { amount: number } } }).data.value.amount = 99;
         return { approved: true, scope: "once" };
       },
     };

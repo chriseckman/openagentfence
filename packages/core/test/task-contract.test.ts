@@ -46,6 +46,6 @@ describe("task contract validation", () => {
         task: "x",
         secrets: [{ name: "a", kind: "SECRET", origins: [], fieldTypes: [] }],
       }).ok,
-    ).toBe(true);
+    ).toBe(false);
   });
 });

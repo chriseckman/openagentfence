@@ -16,15 +16,28 @@ import {
 } from "../action/post-action.js";
 import { mintAuthorizedAction, type Authorized } from "../action/authorized.js";
 import { stableSerialize } from "../action/state-fingerprint.js";
-import { denyAllResolver } from "../secrets/resolver.js";
+import {
+  createScopedSecretResolver,
+  denyAllResolver,
+  type ScopedSecretResolver,
+} from "../secrets/resolver.js";
 import { wrapUntrustedContent, type UntrustedContent } from "../contracts/untrusted-content.js";
+import {
+  leastTrust,
+  provenanced,
+  validateDataProvenance,
+  type DataProvenance,
+  type ProvenancedDatum,
+} from "../contracts/provenance.js";
 import type { Finding } from "../contracts/finding.js";
 import type { AggregateVerdict } from "../contracts/verdict.js";
 import type { BrowserAdapter } from "../adapter/browser-adapter.js";
 import type { AdapterEvent, AdapterEventSink } from "../adapter/browser-adapter.js";
 import type { NetworkMutation } from "../network/mutation.js";
-import { DEFAULT_DESTINATION_RULES, evaluateDestination } from "../network/destination.js";
-import type { VaultAdapter } from "../secrets/vault-adapter.js";
+import { DEFAULT_DESTINATION_RULES } from "../network/destination.js";
+import { correlateNetworkMutation } from "../network/correlate.js";
+import { evaluateNetworkMutation } from "../network/evaluate.js";
+import type { SessionVault } from "../secrets/vault-adapter.js";
 import type { PolicyEngine } from "../policy/engine.js";
 import {
   SessionBudgetLedger,
@@ -33,6 +46,12 @@ import {
   type SessionClock,
 } from "./budgets.js";
 import type { GuardModelProvider } from "../guard/provider.js";
+import type { GuardClassificationRequest } from "../guard/request.js";
+import {
+  DEFAULT_GUARD_EXECUTION_LIMITS,
+  runGuardProvider,
+  type GuardProviderOutcome,
+} from "../guard/execution.js";
 import type { TraceWriter } from "../trace/writer.js";
 import { redactDeep } from "../trace/writer.js";
 import type { TraceDocument, EvidenceReference } from "../trace/events.js";
@@ -41,19 +60,27 @@ import type { PageObservation } from "../adapter/observation.js";
 import type { SecurityPhase } from "../contracts/phase.js";
 import type { SecurityContext, PhasePayload } from "../scanner/context.js";
 import { ScannerRegistry } from "../orchestrator/registry.js";
-import { runPhase } from "../orchestrator/run-phase.js";
+import { runPhase, type PhaseTierMetric } from "../orchestrator/run-phase.js";
 import { type ResourceLimits } from "../orchestrator/limits.js";
-import { applySanitizations, applySanitizationSpans } from "../orchestrator/sanitize.js";
+import { applySanitizationPipeline, type SanitizationSpan } from "../orchestrator/sanitize.js";
 import { riskAggregator } from "../risk/aggregator.js";
 import { applyRiskSignal, type RiskSignal } from "../risk/engine.js";
 import type { RiskAssessment } from "../contracts/risk-assessment.js";
-import { isHighImpact } from "../action/classify.js";
-import { sameOrigin, sameSite } from "../action/url.js";
-import { detectHandles } from "../secrets/handle-codec.js";
-import { REASON_CODES, type ReasonCode } from "../policy/reasons.js";
+import { isCrossOrigin, isHighImpact } from "../action/classify.js";
+import { originOf, sameOrigin, sameSite } from "../action/url.js";
+import { detectHandles, serializeHandle, type SecretHandle } from "../secrets/handle-codec.js";
+import { isReasonCode, REASON_CODES, type ReasonCode } from "../policy/reasons.js";
 import type { ApprovalDecision, ApprovalHandler, ApprovalRequest } from "./approval.js";
 import { resolveApproval } from "./approval.js";
 import type { SessionDecision, SessionEvents } from "./events.js";
+import { actionEgressPayloads } from "../egress/action.js";
+import {
+  createEgressInspector,
+  type EgressInspection,
+  type EgressInspector,
+} from "../egress/inspect.js";
+import type { EgressPayload } from "../egress/payload.js";
+import { evaluateCrossOriginExfiltration } from "../egress/exfiltration.js";
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 30_000;
 
@@ -63,6 +90,16 @@ interface ActivePostAction {
   readonly startedOrigin: string | undefined;
   readonly events: AdapterEvent[];
   status: PostActionStatus;
+}
+
+interface SensitiveEgressBinding {
+  readonly origins: ReadonlySet<string>;
+  readonly fieldTypes: ReadonlySet<string>;
+}
+
+interface ActionEgressEvaluation {
+  readonly reasons: readonly ReasonCode[];
+  readonly matchCount: number;
 }
 
 export interface SecuritySessionInit {
@@ -75,7 +112,7 @@ export interface SecuritySessionInit {
   readonly redactor: RedactionRegistry;
   readonly limits: ResourceLimits;
   readonly guardModel?: GuardModelProvider;
-  readonly vault?: VaultAdapter;
+  readonly vault?: SessionVault;
   readonly approvalHandler?: ApprovalHandler;
   readonly trace: TraceWriter;
   readonly clock?: SessionClock;
@@ -83,7 +120,8 @@ export interface SecuritySessionInit {
 
 export interface PerceptionResult {
   readonly observation: PageObservation;
-  readonly sanitizedText: string;
+  /** Sanitized text is still untrusted and carries its original source. */
+  readonly sanitizedText: ProvenancedDatum<string>;
   readonly findings: readonly Finding[];
   readonly assessment: RiskAssessment;
 }
@@ -95,6 +133,15 @@ export interface BoundAuthorizationResult {
 }
 
 /**
+ * Trusted TB1 declaration for an action batch. It is deliberately available
+ * only on the firewall-owned batch API; caller-supplied `trust: "user"` on a
+ * raw action is rejected.
+ */
+export interface TrustedInstructionOptions {
+  readonly instructedBy?: "user";
+}
+
+/**
  * Narrow bridge for adapters which have an exact structured executor but do
  * not implement the browser event contract. The callback receives no raw
  * action and is invoked only after core has atomically consumed a
@@ -103,6 +150,26 @@ export interface BoundAuthorizationResult {
 export interface ExactActionExecutor {
   execute(): Promise<unknown>;
 }
+
+/** Session-owned limits for one bounded guard-provider dispatch. */
+export interface SessionGuardExecution {
+  readonly signal: AbortSignal;
+  readonly deadline: number;
+  readonly maxInputBytes?: number;
+  readonly maxOutputBytes?: number;
+  readonly maxTokens?: number;
+}
+
+/** Session-owned, budget-consuming semantic guard dispatch capability. */
+export type SessionGuardClassifier = (
+  request: GuardClassificationRequest,
+  execution: SessionGuardExecution,
+) => Promise<GuardProviderOutcome>;
+
+/** Creates one guard-backed scanner per session without exposing the provider. */
+export type SessionGuardScannerFactory = (
+  classify: SessionGuardClassifier,
+) => import("../scanner/scanner.js").SecurityScanner;
 
 /**
  * One browser context = one session (ARCHITECTURE §5). Owns the envelope, risk
@@ -117,10 +184,11 @@ export class SecuritySession {
   private readonly contract: TaskContract;
   private readonly policy: PolicyEngine;
   private readonly registry: ScannerRegistry;
+  private requiredGuardUnavailable = false;
   private readonly redactor: RedactionRegistry;
   private readonly limits: ResourceLimits;
   private readonly guardModel: GuardModelProvider | undefined;
-  private readonly vault: VaultAdapter | undefined;
+  private readonly vault: SessionVault | undefined;
   private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly trace: TraceWriter;
   private readonly budgets: SessionBudgetLedger;
@@ -129,6 +197,8 @@ export class SecuritySession {
   private risk: RiskState = "NORMAL";
   private score = 0;
   private currentOrigin: string | undefined;
+  /** Monotonic v0.1 taint floor; only a new SecuritySession clears it. */
+  private taintFloor: DataProvenance | undefined;
   private ended = false;
   private readonly approvalControllers = new Set<AbortController>();
   private readonly approvalGrants = new Map<
@@ -141,10 +211,15 @@ export class SecuritySession {
    * deterministic PRE_ACTION decision and is consumable exactly once.
    */
   private readonly issuedAuthorizations = new Map<Authorized, string>();
+  private readonly approvedSecretSinks = new Set<string>();
+  private readonly activeSecretResolvers = new Set<ScopedSecretResolver>();
   private activePostAction: ActivePostAction | undefined;
   private readonly unsubscribeEvents: () => void;
 
   private readonly listeners = new Map<keyof SessionEvents, Set<(event: unknown) => void>>();
+  private readonly sensitiveEgressBindings = new Map<string, SensitiveEgressBinding[]>();
+  private readonly egressInspector: EgressInspector;
+  private readonly evaluatedNetworkMutations = new WeakSet<NetworkMutation>();
 
   constructor(init: SecuritySessionInit) {
     this.id = init.id;
@@ -161,12 +236,25 @@ export class SecuritySession {
     this.trace = init.trace;
     this.clock = init.clock ?? systemSessionClock;
     this.budgets = new SessionBudgetLedger(init.contract.budgets, this.clock.now(), this.clock);
+    this.egressInspector = createEgressInspector({
+      match: (value, signal) => this.redactor.matchEgress(value, signal),
+      isDestinationAllowed: (fingerprint, destinationOrigin, sink, fieldType) =>
+        this.sensitiveEgressBindings
+          .get(fingerprint)
+          ?.some(
+            (binding) =>
+              binding.origins.has(destinationOrigin) &&
+              binding.fieldTypes.has(sink === "typed_value" ? (fieldType ?? "") : sink),
+          ) === true,
+    });
     const sink: AdapterEventSink = {
       onNavigation: (event) => this.recordAdapterEvent(event),
       onPopup: (event) => this.recordAdapterEvent(event),
       onDownload: (event) => this.recordAdapterEvent(event),
       onNetworkMutation: (mutation) => this.recordNetworkMutation(mutation),
-      onRouteRequest: (mutation) => this.evaluateRouteRequest(mutation),
+      onEgressPayload: (payload, signal) => this.inspectEgress(payload, signal),
+      onRouteRequest: (mutation, egressInspection) =>
+        this.evaluateRouteRequest(mutation, egressInspection),
     };
     this.unsubscribeEvents = this.adapter.subscribe(this.id, sink);
   }
@@ -187,8 +275,57 @@ export class SecuritySession {
     return this.guardModel;
   }
 
+  /**
+   * Dispatch one redacted guard request while atomically consuming the
+   * session's call/token authority. A dispatched or cancelled attempt is never
+   * refunded; composite providers reserve again before a fallback attempt.
+   */
+  async classifyWithGuard(
+    request: GuardClassificationRequest,
+    execution: SessionGuardExecution,
+  ): Promise<GuardProviderOutcome> {
+    if (this.ended || this.guardModel === undefined) {
+      return { ok: false, kind: "unavailable" };
+    }
+    return runGuardProvider(this.guardModel, request, {
+      signal: execution.signal,
+      deadline: execution.deadline,
+      maxInputBytes: execution.maxInputBytes ?? DEFAULT_GUARD_EXECUTION_LIMITS.maxInputBytes,
+      maxOutputBytes: execution.maxOutputBytes ?? DEFAULT_GUARD_EXECUTION_LIMITS.maxOutputBytes,
+      maxTokens: execution.maxTokens ?? DEFAULT_GUARD_EXECUTION_LIMITS.maxTokens,
+      reserveDispatch: ({ calls, tokens }) =>
+        this.reserveBudget([
+          { kind: "guardCalls", amount: calls },
+          { kind: "guardTokens", amount: tokens },
+        ]),
+    });
+  }
+
   get sessionRisk(): SessionRisk {
     return { state: this.risk, score: this.score };
+  }
+
+  /** The redacted source metadata that established the current taint floor. */
+  get sessionTaintFloor(): DataProvenance | undefined {
+    return this.taintFloor;
+  }
+
+  /**
+   * Register an application-supplied value with this session's vault. The raw
+   * value is immediately added to the session redaction registry; callers only
+   * receive an opaque handle (ADR-0005).
+   */
+  async registerSecret(
+    name: string,
+    value: string,
+    kind: SecretHandle["kind"] = "SECRET",
+  ): Promise<SecretHandle> {
+    if (this.ended) throw new Error("session has ended");
+    if (this.vault === undefined) throw new Error("no vault is configured for this session");
+    const handle = await this.vault.store(name, value, kind);
+    this.redactor.registerSecret(value);
+    this.registerSensitiveEgress(value, handle);
+    return handle;
   }
 
   on<K extends keyof SessionEvents>(
@@ -268,25 +405,54 @@ export class SecuritySession {
    * aggregated assessment; updates the session risk state.
    */
   async observe(): Promise<PerceptionResult> {
+    const result = await this.observeForAuthorization();
+    this.releaseUntrustedContext(result.sanitizedText.provenance, "observation");
+    return { ...result, observation: redactPublicObservation(result.observation, this.redactor) };
+  }
+
+  /**
+   * Capture page state for firewall authorization without handing page content
+   * to an agent. Adapter wrappers must use this rather than `observe()` so an
+   * internal reobservation does not incorrectly become an agent-context
+   * release.
+   */
+  async observeForAuthorization(): Promise<PerceptionResult> {
     const observation = await this.adapter.observe();
     this.currentOrigin = observation.origin;
     const ctx = this.buildContext("PERCEPTION", { kind: "observation", observation });
     const phase = await runPhase(this.registry, "PERCEPTION", ctx, this.limits);
+    this.recordTierMetrics("PERCEPTION", phase.tierMetrics);
+    this.updateRequiredGuardAvailability(phase);
 
-    const findings = phase.results.flatMap((r) => r.findings);
+    const findings = phase.results
+      .flatMap((r) => r.findings)
+      .map((finding) => redactFinding(finding, this.redactor));
     const baseText = observationText(observation);
-    const spanSanitized = applySanitizationSpans(baseText, phase.sanitizationSpans);
-    const sanitizedText = applySanitizations(spanSanitized, phase.sanitizedTexts);
+    const materializedSpans = await this.materializeSensitiveSpans(
+      baseText,
+      phase.sanitizationSpans,
+    );
+    const sanitizedText = this.redactor.redact(
+      applySanitizationPipeline(baseText, materializedSpans, phase.sanitizedTexts),
+    );
+    const sanitizedProvenance = provenanceAfterSanitization(observation.provenance, phase);
 
     const assessment = riskAggregator.aggregate({
-      scanResults: phase.results,
+      scanResults: phase.results.map((result) => ({
+        ...result,
+        findings: result.findings.map((finding) => redactFinding(finding, this.redactor)),
+      })),
       policyDecision: { verdict: "ALLOW", reasons: [], matchedRules: [], policyHash: "perception" },
       riskState: this.risk,
       score: this.score,
       budgetsExhausted: false,
     });
 
-    this.trace.append("observation", { url: observation.url, origin: observation.origin });
+    this.trace.append("observation", {
+      url: observation.url,
+      origin: observation.origin,
+      provenance: observation.provenance,
+    });
     for (const failure of phase.failures) {
       this.trace.append("scan_result", { scanner: failure.scanner, failureKind: failure.kind });
     }
@@ -296,6 +462,7 @@ export class SecuritySession {
         category: finding.category,
         sourceType: finding.source.type,
         evidenceHash: hash(finding.evidence),
+        provenance: finding.provenance,
       });
       this.emit("finding", finding);
     }
@@ -320,7 +487,7 @@ export class SecuritySession {
 
     return {
       observation,
-      sanitizedText,
+      sanitizedText: provenanced(sanitizedText, sanitizedProvenance),
       findings,
       assessment: { ...assessment, verdict },
     };
@@ -385,14 +552,67 @@ export class SecuritySession {
    * restricted risk states with `session_restricted`.
    */
   async authorize(action: CanonicalAction): Promise<SessionDecision> {
-    this.trace.append("proposed_action", { type: action.type });
+    return this.authorizePrepared(this.prepareAction(action));
+  }
+
+  /**
+   * Authorize a batch of application-submitted actions. `instructedBy: user`
+   * is a TB1-only assertion, recorded before use, and still traverses the full
+   * deterministic authorization pipeline.
+   */
+  async authorizeActions(
+    actions: readonly CanonicalAction[],
+    options: TrustedInstructionOptions = {},
+  ): Promise<readonly SessionDecision[]> {
+    return Promise.all(
+      actions.map((action) => {
+        const prepared = this.prepareAction(action, options);
+        if (options.instructedBy === "user") {
+          this.trace.append("trusted_instruction_claim", {
+            instructedBy: "user",
+            actionType: prepared.type,
+            instructionProvenance: prepared.instructionProvenance,
+          });
+        }
+        return this.authorizePrepared(prepared);
+      }),
+    );
+  }
+
+  private async authorizePrepared(
+    action: CanonicalAction,
+    intent?: ActionIntent,
+  ): Promise<SessionDecision> {
+    this.trace.append("proposed_action", {
+      type: action.type,
+      instructionProvenance: action.instructionProvenance,
+      ...(action.data !== undefined ? { dataProvenance: action.data.provenance } : {}),
+    });
     this.trace.append("canonical_action", {
       type: action.type,
+      instructionProvenance: action.instructionProvenance,
+      ...(action.data !== undefined ? { dataProvenance: action.data.provenance } : {}),
       ...helperTraceMetadata(action),
     });
 
-    const builtInReasons = this.unboundHandleReasons(action);
+    const egress = this.actionEgressEvaluation(action, intent);
+    const exfiltrationReasons = this.crossOriginExfiltrationReasons(action, egress);
+    const builtInReasons = uniqueReasons([
+      ...(this.requiredGuardUnavailable && isHighImpact(action)
+        ? [REASON_CODES.scanner_unavailable]
+        : []),
+      ...this.unboundHandleReasons(action),
+      ...this.untrustedNavigationReasons(action),
+      ...egress.reasons,
+      ...exfiltrationReasons,
+    ]);
     if (builtInReasons.length > 0) {
+      if (
+        exfiltrationReasons.length > 0 ||
+        egress.reasons.includes(REASON_CODES.sensitive_value_in_egress)
+      ) {
+        this.applyRiskSignal("secret_requested");
+      }
       const riskAction = this.evaluateRiskAction(action);
       return this.recordDecision(
         action,
@@ -409,6 +629,7 @@ export class SecuritySession {
     // a final block; a scanner can never be bypassed by a later policy allow.
     const ctx = this.buildContext("PRE_ACTION", { kind: "proposedAction", action });
     const phase = await runPhase(this.registry, "PRE_ACTION", ctx, this.limits);
+    this.recordTierMetrics("PRE_ACTION", phase.tierMetrics);
     for (const result of phase.results) {
       this.trace.append("scan_result", {
         scanner: result.scanner,
@@ -421,6 +642,7 @@ export class SecuritySession {
           category: finding.category,
           sourceType: finding.source.type,
           evidenceHash: hash(finding.evidence),
+          provenance: finding.provenance,
         });
       }
     }
@@ -545,42 +767,64 @@ export class SecuritySession {
     if (stableSerialize(intent.action) !== stableSerialize(action)) {
       throw new TypeError("ActionIntent action does not match the action being authorized");
     }
-    if (intent.policyHash !== this.policy.policyHash || isIntentExpired(intent)) {
+    const preparedAction = this.prepareAction(action);
+    // Provenance is authorization-relevant state. A floor may activate after a
+    // wrapper built its intent, so bind the exact effective action rather than
+    // allowing the application-labelled candidate to reach the executor.
+    const preparedIntent: ActionIntent = { ...intent, action: preparedAction };
+    if (preparedIntent.policyHash !== this.policy.policyHash || isIntentExpired(preparedIntent)) {
       const reason =
-        intent.policyHash !== this.policy.policyHash
+        preparedIntent.policyHash !== this.policy.policyHash
           ? REASON_CODES.action_policy_mismatch
           : REASON_CODES.action_intent_expired;
-      const decision = this.recordDecision(action, "BLOCK", [reason], this.policy.policyHash);
-      this.trace.append("action_revalidation", { reason, intentId: intent.intentId });
+      const decision = this.recordDecision(
+        preparedAction,
+        "BLOCK",
+        [reason],
+        this.policy.policyHash,
+      );
+      this.trace.append("action_revalidation", { reason, intentId: preparedIntent.intentId });
       return { decision };
     }
-    const decision = await this.authorize(action);
+    const decision = await this.authorizePrepared(preparedAction, preparedIntent);
     if (decision.verdict !== "ALLOW") {
       return { decision };
     }
     const decisionId = randomBytes(8).toString("hex");
     const authorized = mintAuthorizedAction({
-      action,
-      intent,
-      operationHash: intent.operationHash,
+      action: preparedAction,
+      intent: preparedIntent,
+      operationHash: preparedIntent.operationHash,
       policyHash: this.policy.policyHash,
       decisionId,
       traceId: decisionId,
     });
-    this.trace.append("authorized_action", { intentId: intent.intentId, decisionId });
+    this.trace.append("authorized_action", { intentId: preparedIntent.intentId, decisionId });
     // Bind the authorization to every firewall-owned input that can change
     // between decision and side effect: policy, risk, budget, grants, action
     // identity, and session liveness. This snapshot deliberately excludes
     // wall-clock churn; expiry is checked independently below.
-    this.issuedAuthorizations.set(authorized, this.approvalState(action));
+    this.issuedAuthorizations.set(authorized, this.approvalState(preparedAction));
     return { decision, authorized };
   }
 
   /** Execute only a core-minted authorization through the adapter boundary. */
   async executeAuthorized(authorized: Authorized): Promise<unknown> {
-    return this.executeIssuedAuthorization(authorized, () =>
-      this.adapter.executeAuthorized(authorized, denyAllResolver),
-    );
+    return this.executeIssuedAuthorization(authorized, async (issuedState) => {
+      const resolver = this.createSecretResolver(authorized, issuedState);
+      if (resolver === undefined) {
+        return this.adapter.executeAuthorized(authorized, denyAllResolver);
+      }
+      this.activeSecretResolvers.add(resolver);
+      try {
+        const result = await this.adapter.executeAuthorized(authorized, resolver);
+        resolver.commit();
+        return result;
+      } finally {
+        resolver.revoke();
+        this.activeSecretResolvers.delete(resolver);
+      }
+    });
   }
 
   /**
@@ -598,7 +842,7 @@ export class SecuritySession {
 
   private async executeIssuedAuthorization(
     authorized: Authorized,
-    execute: () => Promise<unknown>,
+    execute: (issuedState: string) => Promise<unknown>,
     postActionStatus?: PostActionStatus,
   ): Promise<unknown> {
     if (this.ended) throw new TypeError("cannot execute an authorization after session end");
@@ -635,12 +879,17 @@ export class SecuritySession {
     };
     this.activePostAction = active;
     try {
-      const result = await execute();
-      this.trace.append("execution", {
-        intentId: authorized.intent.intentId,
-        type: authorized.action.type,
-      });
-      return result;
+      try {
+        const result = await execute(issuedState);
+        this.trace.append("execution", {
+          intentId: authorized.intent.intentId,
+          type: authorized.action.type,
+        });
+        return redactDeep(result, this.redactor);
+      } catch (error: unknown) {
+        if (isSafeRevalidationError(error, this.redactor)) throw error;
+        throw new TypeError("authorized execution failed");
+      }
     } finally {
       await this.completePostAction(active);
     }
@@ -655,20 +904,71 @@ export class SecuritySession {
    * Bound and scan adapter-derived text before returning it to application or
    * agent code. The result remains web provenance and never becomes authority.
    */
-  async inspectUntrustedText(content: string, maxBytes = 65_536): Promise<UntrustedContent> {
+  async inspectUntrustedText(
+    content: string,
+    maxBytes = 65_536,
+    provenance: DataProvenance = { trust: "web", timestamp: new Date().toISOString() },
+  ): Promise<UntrustedContent> {
     if (Buffer.byteLength(content, "utf8") > maxBytes) {
       throw new RangeError("untrusted adapter output exceeds the configured byte limit");
     }
     const ctx = this.buildContext("MODEL_OUTPUT", {
       kind: "modelOutput",
-      output: { content, provenance: { trust: "web" } },
+      output: { content, provenance },
     });
     const phase = await runPhase(this.registry, "MODEL_OUTPUT", ctx, this.limits);
+    this.recordTierMetrics("MODEL_OUTPUT", phase.tierMetrics);
+    this.updateRequiredGuardAvailability(phase);
     if (phase.failures.length > 0) {
       throw new Error(REASON_CODES.scanner_unavailable);
     }
-    const sanitized = applySanitizations(content, phase.sanitizedTexts);
-    return wrapUntrustedContent({ content: sanitized, provenance: { trust: "web" } });
+    const materializedSpans = await this.materializeSensitiveSpans(
+      content,
+      phase.sanitizationSpans,
+    );
+    const sanitized = this.redactor.redact(
+      applySanitizationPipeline(content, materializedSpans, phase.sanitizedTexts),
+    );
+    this.releaseUntrustedContext(provenance, "tool_output");
+    return wrapUntrustedContent({ content: sanitized, provenance });
+  }
+
+  private async materializeSensitiveSpans(
+    base: string,
+    spans: readonly SanitizationSpan[],
+  ): Promise<readonly SanitizationSpan[]> {
+    const output: SanitizationSpan[] = [];
+    for (const span of spans) {
+      const marker = /^\[\[OAF_SENSITIVE:(SECRET|PII|CREDENTIAL):([a-z0-9_.-]{1,64})\]\]$/.exec(
+        span.replacement,
+      );
+      if (marker === null) {
+        output.push(span);
+        continue;
+      }
+      const value = base.slice(span.start, span.end);
+      if (value.length === 0 || this.vault === undefined) {
+        output.push({ ...span, replacement: "[REDACTED:SENSITIVE]" });
+        continue;
+      }
+      this.redactor.registerSecret(value);
+      this.registerSensitiveEgress(value);
+      try {
+        const pattern = marker[2] ?? "detected";
+        const kind = marker[1] as SecretHandle["kind"];
+        const handle = await this.vault.store(
+          `detected_${pattern}_${hash(value).slice(0, 8)}`,
+          value,
+          kind,
+        );
+        this.registerSensitiveEgress(value, handle);
+        output.push({ ...span, replacement: serializeHandle(handle) });
+      } catch {
+        // Capacity/expiry errors fail closed: never release the matched value.
+        output.push({ ...span, replacement: "[REDACTED:SENSITIVE]" });
+      }
+    }
+    return output;
   }
 
   /** Resolve an approval for an action; deny-by-default (INV-11). */
@@ -741,12 +1041,37 @@ export class SecuritySession {
     this.approvalControllers.clear();
     this.issuedAuthorizations.clear();
     this.approvalGrants.clear();
+    for (const resolver of this.activeSecretResolvers) resolver.revoke();
+    this.activeSecretResolvers.clear();
+    this.approvedSecretSinks.clear();
+    this.sensitiveEgressBindings.clear();
     this.unsubscribeEvents();
     this.trace.append("session_end", { risk: this.risk, score: this.score });
     if (this.vault !== undefined) {
       await this.vault.invalidateSession();
     }
     return this.trace.document();
+  }
+
+  private recordTierMetrics(phase: SecurityPhase, metrics: readonly PhaseTierMetric[]): void {
+    for (const metric of metrics) {
+      this.trace.append("scan_result", {
+        phase,
+        tier: metric.tier,
+        status: metric.status,
+        scannerCount: metric.scannerCount,
+        ...(metric.skipReason !== undefined ? { skipReason: metric.skipReason } : {}),
+      });
+    }
+  }
+
+  private updateRequiredGuardAvailability(phase: {
+    readonly requiredGuardChecked: boolean;
+    readonly requiredGuardFailure: boolean;
+  }): void {
+    if (phase.requiredGuardChecked) {
+      this.requiredGuardUnavailable = phase.requiredGuardFailure;
+    }
   }
 
   private buildContext(phase: SecurityPhase, payload: PhasePayload): SecurityContext {
@@ -757,7 +1082,7 @@ export class SecuritySession {
       envelope: this.envelope,
       riskState: this.risk,
       payload,
-      provenance: { trust: "web" },
+      provenance: provenanceOf(payload),
       redactor: this.redactor,
       deadline: Date.now() + this.limits.phaseDeadlineMs,
       signal: new AbortController().signal,
@@ -814,6 +1139,7 @@ export class SecuritySession {
         this.buildContext("POST_ACTION", { kind: "postAction", observation }),
         this.limits,
       );
+      this.recordTierMetrics("POST_ACTION", phase.tierMetrics);
       for (const result of phase.results) {
         this.trace.append("scan_result", {
           scanner: result.scanner,
@@ -911,15 +1237,129 @@ export class SecuritySession {
 
   private recordNetworkMutation(mutation: NetworkMutation): void {
     if (this.ended) return;
+    if (mutation.enforcement === "enforced" && this.evaluatedNetworkMutations.has(mutation)) return;
+    const correlation = correlateNetworkMutation(
+      mutation,
+      mutation.actionIntentId === undefined ? undefined : this.activePostAction?.intent,
+      this.clock.now(),
+    );
+    const decision = evaluateNetworkMutation({
+      mutation,
+      envelope: this.envelope,
+      riskState: this.risk,
+      destinationRules: this.policy.destinationRules ?? DEFAULT_DESTINATION_RULES,
+      correlation,
+    });
     this.trace.append("network_mutation", {
       surface: mutation.surface,
       initiator: mutation.initiator,
       destination: mutation.destination,
       enforcement: mutation.enforcement,
+      provenance: mutation.provenance,
+      verdict: decision.verdict,
+      reasons: decision.reasons,
+      correlation: correlation.status,
+      ...(correlation.intentId !== undefined ? { intentId: correlation.intentId } : {}),
     });
+    this.applyNetworkRisk(decision.reasons);
   }
 
-  private evaluateRouteRequest(mutation: NetworkMutation) {
+  private inspectEgress(payload: EgressPayload, signal?: AbortSignal): EgressInspection {
+    if (this.ended) {
+      return {
+        verdict: "block",
+        reasons: [REASON_CODES.egress_inspection_incomplete],
+        inspectedBytes: 0,
+        matchCount: 0,
+      };
+    }
+    const result = this.egressInspector.inspect(payload, signal);
+    if (result.verdict === "block" || result.matchCount > 0) {
+      this.trace.append("egress_inspection", {
+        sink: payload.sink,
+        verdict: result.verdict,
+        inspectedBytes: result.inspectedBytes,
+        matchCount: result.matchCount,
+        ...(result.reasons.length > 0 ? { reasons: result.reasons } : {}),
+      });
+    }
+    return result;
+  }
+
+  private actionEgressEvaluation(
+    action: CanonicalAction,
+    intent?: ActionIntent,
+  ): ActionEgressEvaluation {
+    const reasons = new Set<ReasonCode>();
+    let matchCount = 0;
+    for (const payload of actionEgressPayloads(action, intent)) {
+      const result = this.inspectEgress(payload);
+      matchCount += result.matchCount;
+      if (result.verdict === "block") for (const reason of result.reasons) reasons.add(reason);
+    }
+    return { reasons: [...reasons], matchCount };
+  }
+
+  private crossOriginExfiltrationReasons(
+    action: CanonicalAction,
+    egress: ActionEgressEvaluation,
+  ): readonly ReasonCode[] {
+    const handles = detectHandles(action);
+    const declaredHandles = handles.every((handle) =>
+      (this.contract.secrets ?? []).some(
+        (binding) => binding.name === handle.name && binding.kind === handle.kind,
+      ),
+    );
+    if (handles.length > 0 && !declaredHandles) return [];
+    const destination = action.destination ?? action.target?.origin;
+    const destinationOrigin = destination === undefined ? null : originOf(destination);
+    const matchedValueBlocked = egress.reasons.includes(REASON_CODES.sensitive_value_in_egress);
+    // Handles are inert on every PS-019 action surface. The only v0.1
+    // executor-supported secret sinks are exact FILL/TYPE/select operations,
+    // which are intentionally outside this rule's action set.
+    const exactSinkBound = egress.matchCount > 0 && !matchedValueBlocked && handles.length === 0;
+    const envelopeReasons = this.envelope.evaluate({
+      type: action.type,
+      ...(action.destination !== undefined ? { destination: action.destination } : {}),
+      ...(action.target !== undefined ? { target: action.target } : {}),
+    }).reasons;
+    const destinationInTaskScope =
+      destinationOrigin !== null &&
+      !this.envelope.blockedOrigins.includes(destinationOrigin) &&
+      (destinationOrigin === this.currentOrigin ||
+        destinationOrigin === action.target?.origin ||
+        this.envelope.allowedOrigins.includes(destinationOrigin)) &&
+      !envelopeReasons.includes(REASON_CODES.destination_not_allowed);
+    return evaluateCrossOriginExfiltration(action, {
+      ...(this.currentOrigin !== undefined ? { currentOrigin: this.currentOrigin } : {}),
+      sessionTainted:
+        this.taintFloor !== undefined && action.instructionProvenance.trust !== "user",
+      valueMatched: egress.matchCount > 0,
+      handlePresent: handles.length > 0,
+      exactSinkBound,
+      destinationInTaskScope,
+    }).reasons;
+  }
+
+  private registerSensitiveEgress(value: string, handle?: SecretHandle): void {
+    const fingerprint = hash(value);
+    let bindings = this.sensitiveEgressBindings.get(fingerprint);
+    if (bindings === undefined) {
+      bindings = [];
+      this.sensitiveEgressBindings.set(fingerprint, bindings);
+    }
+    if (handle === undefined) return;
+    for (const binding of this.contract.secrets ?? []) {
+      if (binding.name === handle.name && binding.kind === handle.kind) {
+        bindings.push({
+          origins: new Set(binding.origins),
+          fieldTypes: new Set(binding.fieldTypes),
+        });
+      }
+    }
+  }
+
+  private evaluateRouteRequest(mutation: NetworkMutation, egressInspection?: EgressInspection) {
     // A routed redirect has an active abort hook. Count each observed redirect
     // transition before continuing it; a rejected reservation is a terminal
     // deterministic block (INV-09/16), not merely trace evidence.
@@ -932,31 +1372,51 @@ export class SecuritySession {
         verdict: "block",
         reasons: [REASON_CODES.budget_exceeded],
         enforcement: mutation.enforcement,
+        provenance: mutation.provenance,
       } as const;
     }
-    const outcome = evaluateDestination({
-      destination: mutation.destination,
-      ...(mutation.origin !== undefined ? { sourceOrigin: mutation.origin } : {}),
-      enforceNavigationScope: mutation.surface === "navigation" || mutation.surface === "redirect",
-      ...(mutation.redirectHops !== undefined ? { redirectHops: mutation.redirectHops } : {}),
+    const correlation = correlateNetworkMutation(
+      mutation,
+      mutation.actionIntentId === undefined ? undefined : this.activePostAction?.intent,
+      this.clock.now(),
+    );
+    const decision = evaluateNetworkMutation({
+      mutation,
       envelope: this.envelope,
-      rules: this.policy.destinationRules ?? DEFAULT_DESTINATION_RULES,
+      riskState: this.risk,
+      destinationRules: this.policy.destinationRules ?? DEFAULT_DESTINATION_RULES,
+      ...(egressInspection !== undefined ? { egressInspection } : {}),
+      correlation,
     });
-    if (!outcome.allowed) {
-      this.trace.append("network_mutation", {
-        surface: mutation.surface,
-        initiator: mutation.initiator,
-        destination: mutation.destination,
-        enforcement: mutation.enforcement,
-        verdict: "block",
-        reasons: outcome.reasons,
-      });
-    }
-    return {
-      verdict: outcome.allowed ? "continue" : "block",
-      reasons: outcome.reasons,
+    this.evaluatedNetworkMutations.add(mutation);
+    this.trace.append("network_mutation", {
+      surface: mutation.surface,
+      initiator: mutation.initiator,
+      destination: mutation.destination,
       enforcement: mutation.enforcement,
-    } as const;
+      provenance: mutation.provenance,
+      verdict: decision.verdict,
+      reasons: decision.reasons,
+      correlation: correlation.status,
+      ...(correlation.intentId !== undefined ? { intentId: correlation.intentId } : {}),
+    });
+    this.applyNetworkRisk(decision.reasons);
+    return decision;
+  }
+
+  private applyNetworkRisk(reasons: readonly ReasonCode[]): void {
+    if (reasons.includes(REASON_CODES.sensitive_value_in_egress)) {
+      this.applyRiskSignal("secret_requested");
+    } else if (
+      reasons.some(
+        (reason) =>
+          reason === REASON_CODES.private_network_destination ||
+          reason === REASON_CODES.destination_not_allowed ||
+          reason === REASON_CODES.network_origin_not_allowed,
+      )
+    ) {
+      this.applyRiskSignal("cross_origin_redirect");
+    }
   }
 
   private evaluateRiskAction(action: CanonicalAction): "allow" | "require_approval" | "block" {
@@ -983,7 +1443,9 @@ export class SecuritySession {
     // action set. This is a state-bound block, not an approval candidate, so
     // its stable reason remains visible alongside a policy-layer block.
     if (action.type === "NAVIGATE") return "block";
-    if (detectHandles(action.data).length > 0) return "block";
+    if (detectHandles(action.data).length > 0) {
+      return this.hasPreviouslyApprovedSecretHandle(action) ? "allow" : "block";
+    }
     if (
       (action.type === "CLICK" || action.type === "TYPE" || action.type === "FILL") &&
       sourceOrigin !== undefined &&
@@ -1010,6 +1472,53 @@ export class SecuritySession {
         !declared.some((binding) => binding.name === handle.name && binding.kind === handle.kind),
     )
       ? [REASON_CODES.secret_sink_not_allowed]
+      : [];
+  }
+
+  private hasPreviouslyApprovedSecretHandle(action: CanonicalAction): boolean {
+    const handles = detectHandles(action);
+    return (
+      handles.length > 0 &&
+      handles.every((handle) => {
+        const prefix = `${serializeHandle(handle)}|`;
+        return [...this.approvedSecretSinks].some((key) => key.startsWith(prefix));
+      })
+    );
+  }
+
+  private createSecretResolver(
+    authorized: Authorized,
+    issuedState: string,
+  ): ScopedSecretResolver | undefined {
+    if (this.vault === undefined) return undefined;
+    return createScopedSecretResolver({
+      authorized,
+      bindings: this.contract.secrets ?? [],
+      envelope: this.envelope,
+      lookup: this.vault.createExecutorLookup(),
+      restrictedMode: this.policy.secretResolution?.restrictedMode ?? "keep_approved_sinks",
+      currentState: () => ({
+        riskState: this.risk,
+        policyHash: this.policy.policyHash,
+        sessionActive: !this.ended,
+        actionStateValid: this.approvalStateMatches(authorized.action, issuedState),
+      }),
+      wasApproved: (sinkKey) => this.approvedSecretSinks.has(sinkKey),
+      approve: (sinkKey) => this.approvedSecretSinks.add(sinkKey),
+      audit: (attempt) => this.trace.append("secret_resolution", { ...attempt }),
+    });
+  }
+
+  /**
+   * Coarse v0.1 containment for a model plan after hostile context release.
+   * This is independent of scanners and semantic evidence; PS-019 extends the
+   * same source-to-sink principle to data-bearing egress actions.
+   */
+  private untrustedNavigationReasons(action: CanonicalAction): readonly ReasonCode[] {
+    return action.type === "NAVIGATE" &&
+      action.instructionProvenance.trust === "web" &&
+      isCrossOrigin(action)
+      ? [REASON_CODES.navigation_instruction_originated_from_untrusted_dom]
       : [];
   }
 
@@ -1049,20 +1558,70 @@ export class SecuritySession {
         expired: this.budgets.isExpired(),
       },
       ended: this.ended,
+      taintFloor: this.taintFloor ?? null,
     });
   }
 
   private approvalStateMatches(action: CanonicalAction, expected: string): boolean {
     return this.approvalState(action) === expected;
   }
+
+  private prepareAction(
+    action: CanonicalAction,
+    options: TrustedInstructionOptions = {},
+  ): CanonicalAction {
+    const provenance = validateDataProvenance(action.instructionProvenance);
+    if (provenance === null) {
+      throw new TypeError("action requires valid bounded instruction provenance");
+    }
+    if (provenance.trust === "user" && options.instructedBy !== "user") {
+      throw new TypeError(
+        "user instruction provenance requires authorizeActions(..., { instructedBy: user })",
+      );
+    }
+    if (options.instructedBy === "user") {
+      return { ...action, instructionProvenance: { trust: "user", timestamp: nowIso(this.clock) } };
+    }
+    if (this.taintFloor === undefined) {
+      return { ...action, instructionProvenance: provenance };
+    }
+    return {
+      ...action,
+      // An agent may have transformed the instruction, so retain the source
+      // that released hostile context and never let its declared provenance
+      // raise trust above the session floor.
+      instructionProvenance: {
+        ...this.taintFloor,
+        trust: leastTrust(provenance.trust, this.taintFloor.trust),
+      },
+    };
+  }
+
+  private releaseUntrustedContext(
+    provenance: DataProvenance,
+    source: "observation" | "tool_output",
+  ): void {
+    const validated = validateDataProvenance(provenance);
+    if (validated === null)
+      throw new TypeError("released content requires valid bounded provenance");
+    const floor: DataProvenance = { ...validated, trust: "web" };
+    if (this.taintFloor !== undefined) return;
+    this.taintFloor = Object.freeze(floor);
+    this.trace.append("taint_activation", { source, provenance: this.taintFloor });
+  }
+}
+
+function nowIso(clock: SessionClock): string {
+  return new Date(clock.now()).toISOString();
 }
 
 function helperTraceMetadata(
   action: CanonicalAction,
 ): { readonly helper: { readonly name: string; readonly sha256: string } } | undefined {
-  if (action.type !== "EXECUTE_SCRIPT" || typeof action.data !== "object" || action.data === null)
-    return undefined;
-  const helper = (action.data as Record<string, unknown>)["helper"];
+  if (action.type !== "EXECUTE_SCRIPT" || action.data === undefined) return undefined;
+  const value = action.data.value;
+  if (typeof value !== "object" || value === null) return undefined;
+  const helper = (value as Record<string, unknown>)["helper"];
   if (typeof helper !== "object" || helper === null) return undefined;
   const name = (helper as Record<string, unknown>)["name"];
   const sha256 = (helper as Record<string, unknown>)["sha256"];
@@ -1077,14 +1636,36 @@ function helperTraceMetadata(
   return { helper: { name, sha256 } };
 }
 
+function provenanceOf(payload: PhasePayload): DataProvenance {
+  switch (payload.kind) {
+    case "observation":
+      return payload.observation.provenance;
+    case "proposedAction":
+      return payload.action.instructionProvenance;
+    case "modelOutput":
+      return payload.output.provenance;
+    case "memoryCandidate":
+      return payload.candidate.provenance;
+    case "egressPayload":
+      return payload.payload.provenance;
+    default:
+      return { trust: "tool", timestamp: new Date().toISOString() };
+  }
+}
+
 function sanitizeApprovalAction(
   action: CanonicalAction,
   redactor: RedactionRegistry,
 ): CanonicalAction {
   const data =
-    action.instructionProvenance.trust === "application" ||
-    action.instructionProvenance.trust === "user"
-      ? redactDeep(action.data, redactor)
+    action.data !== undefined &&
+    (action.instructionProvenance.trust === "application" ||
+      action.instructionProvenance.trust === "user") &&
+    (action.data.provenance.trust === "application" || action.data.provenance.trust === "user")
+      ? {
+          value: redactDeep(action.data.value, redactor),
+          provenance: { trust: action.data.provenance.trust },
+        }
       : undefined;
   return {
     type: action.type,
@@ -1105,10 +1686,33 @@ function withoutRawOperation(action: CanonicalAction): CanonicalAction {
     ...(action.navigationOrigin !== undefined ? { navigationOrigin: action.navigationOrigin } : {}),
     ...(action.target !== undefined ? { target: action.target } : {}),
     ...(action.destination !== undefined ? { destination: action.destination } : {}),
-    ...(action.data !== undefined ? { data: action.data } : {}),
+    ...(action.data !== undefined
+      ? { data: provenanced("[REDACTED]", action.data.provenance) }
+      : {}),
     instructionProvenance: action.instructionProvenance,
     ...(action.sideEffectClass !== undefined ? { sideEffectClass: action.sideEffectClass } : {}),
   };
+}
+
+function provenanceAfterSanitization(
+  observation: DataProvenance,
+  phase: {
+    readonly sanitizedTexts: readonly ProvenancedDatum<string>[];
+    readonly sanitizationSpans: readonly { readonly provenance: DataProvenance }[];
+  },
+): DataProvenance {
+  let result = observation;
+  for (const sanitized of phase.sanitizedTexts) {
+    if (leastTrust(result.trust, sanitized.provenance.trust) === sanitized.provenance.trust) {
+      result = sanitized.provenance;
+    }
+  }
+  for (const span of phase.sanitizationSpans) {
+    if (leastTrust(result.trust, span.provenance.trust) === span.provenance.trust) {
+      result = span.provenance;
+    }
+  }
+  return result;
 }
 
 function sanitizeApprovalFindings(
@@ -1161,9 +1765,11 @@ function budgetUsesFor(action: CanonicalAction): readonly BudgetUse[] {
 }
 
 function uploadByteLength(data: unknown): number {
-  if (!isRecord(data) || !Array.isArray(data["files"])) return Number.POSITIVE_INFINITY;
+  if (!isRecord(data) || !isRecord(data["value"]) || !Array.isArray(data["value"]["files"])) {
+    return Number.POSITIVE_INFINITY;
+  }
   let total = 0;
-  for (const file of data["files"]) {
+  for (const file of data["value"]["files"]) {
     if (
       !isRecord(file) ||
       typeof file["bytes"] !== "number" ||
@@ -1186,12 +1792,69 @@ function appendReason(reasons: readonly ReasonCode[], reason: ReasonCode): reado
   return reasons.includes(reason) ? reasons : [...reasons, reason];
 }
 
+function uniqueReasons(reasons: readonly ReasonCode[]): readonly ReasonCode[] {
+  return [...new Set(reasons)];
+}
+
 function observationText(observation: PageObservation): string {
   if (observation.ariaSnapshot !== undefined) {
     return observation.ariaSnapshot;
   }
   const nodes = observation.probe?.nodes ?? [];
   return nodes.map((n) => n.text).join("\n");
+}
+
+function redactPublicObservation(
+  observation: PageObservation,
+  redactor: RedactionRegistry,
+): PageObservation {
+  const { screenshot, ...textual } = observation;
+  const redacted = redactDeep(textual, redactor) as Omit<PageObservation, "screenshot">;
+  return {
+    ...redacted,
+    ...(screenshot !== undefined ? { screenshot } : {}),
+  };
+}
+
+function isSafeRevalidationError(error: unknown, redactor: RedactionRegistry): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const record = error as {
+    readonly name?: unknown;
+    readonly reason?: unknown;
+    readonly message?: unknown;
+  };
+  return (
+    record.name === "PlaywrightRevalidationError" &&
+    typeof record.reason === "string" &&
+    isReasonCode(record.reason) &&
+    record.message === record.reason &&
+    !redactor.containsSecret(record.reason)
+  );
+}
+
+/** Redact every plugin-controlled presentation field before it becomes public. */
+function redactFinding(finding: Finding, redactor: RedactionRegistry): Finding {
+  return {
+    ...finding,
+    title: redactor.redact(finding.title),
+    description: redactor.redact(finding.description),
+    source: {
+      ...finding.source,
+      ...(finding.source.selector !== undefined
+        ? { selector: redactor.redact(finding.source.selector) }
+        : {}),
+      ...(finding.source.xpath !== undefined
+        ? { xpath: redactor.redact(finding.source.xpath) }
+        : {}),
+      ...(finding.source.origin !== undefined
+        ? { origin: redactor.redact(finding.source.origin) }
+        : {}),
+      ...(finding.source.frameOrigin !== undefined
+        ? { frameOrigin: redactor.redact(finding.source.frameOrigin) }
+        : {}),
+    },
+    evidence: redactor.redact(finding.evidence),
+  };
 }
 
 /** Build reproducible, redacted evidence references from findings (INV-17). */

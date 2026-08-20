@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Frame, Page, Request, Route } from "playwright";
 import {
   buildProbeScript,
@@ -17,6 +18,8 @@ import {
 } from "@openagentfence/core";
 import { currentState, type PlaywrightOperation, type PlaywrightUploadFile } from "./wrap.js";
 import { exactTargetHandle } from "./exact-target.js";
+import { assertSecretOperationSupported, withExecutorArgument } from "./execute-secrets.js";
+import { inspectRoutedEgress } from "./route-egress.js";
 import { PlaywrightHelperRegistry, type HelperArgument } from "./helpers.js";
 
 /** Fail-closed result of adapter-local state revalidation (ADR-0010). */
@@ -89,6 +92,7 @@ export function playwrightAdapter(
   const revisions = new WeakMap<Page, number>();
   let nextPageId = 0;
   let nextFrameId = 0;
+  let activeIntentId: string | undefined;
   const pageId = (value: Page): string => {
     const known = pageIds.get(value);
     if (known !== undefined) return known;
@@ -134,11 +138,15 @@ export function playwrightAdapter(
         probe: main.probe,
         ariaSnapshot,
         ...(screenshot !== undefined ? { screenshot } : {}),
-        provenance: { trust: "web" },
+        provenance: {
+          trust: "web",
+          origin,
+          pageId: pageId(page),
+          timestamp: new Date().toISOString(),
+        },
       };
     },
     async executeAuthorized(authorized: Authorized, resolver: SecretResolver): Promise<unknown> {
-      void resolver;
       if (!isAuthorizedAction(authorized)) {
         throw new TypeError("playwright adapter requires a core-minted AuthorizedAction");
       }
@@ -161,60 +169,78 @@ export function playwrightAdapter(
         url: page.url(),
         origin: originOfUrl(page.url()),
         frames: [],
-        provenance: { trust: "web" },
+        provenance: {
+          trust: "web",
+          origin: originOfUrl(page.url()),
+          pageId: pageId(page),
+          timestamp: new Date().toISOString(),
+        },
       };
       const state = await currentState(page, observation, operation, authorized.policyHash);
       if (compareIntentState(authorized.intent, state).length > 0) {
         throw new PlaywrightRevalidationError("action_intent_mismatch");
       }
-      switch (operation.method) {
-        case "helper": {
-          const helper = operation.helper;
-          if (helper === undefined || options.helpers?.id !== helper.registryId) {
-            throw new TypeError("playwright helper registry mismatch");
+      assertSecretOperationSupported(operation);
+      activeIntentId = authorized.intent.intentId;
+      try {
+        switch (operation.method) {
+          case "helper": {
+            const helper = operation.helper;
+            if (helper === undefined || options.helpers?.id !== helper.registryId) {
+              throw new TypeError("playwright helper registry mismatch");
+            }
+            const registered = options.helpers.resolve(helper.name, helper.sha256);
+            if (registered === undefined)
+              throw new TypeError("playwright helper is not registered");
+            await registered.execute(
+              page,
+              options.helpers.validateArgs(parseHelperArgument(requiredArgument(operation))),
+            );
+            return undefined;
           }
-          const registered = options.helpers.resolve(helper.name, helper.sha256);
-          if (registered === undefined) throw new TypeError("playwright helper is not registered");
-          await registered.execute(
-            page,
-            options.helpers.validateArgs(parseHelperArgument(requiredArgument(operation))),
-          );
-          return undefined;
+          case "goto":
+            await page.goto(requiredArgument(operation));
+            return undefined;
+          case "click":
+            await (exactTarget ?? page.locator(requiredSelector(operation))).click();
+            return undefined;
+          case "fill":
+            await withExecutorArgument(operation, state, resolver, (value) =>
+              (exactTarget ?? page.locator(requiredSelector(operation))).fill(value),
+            );
+            return undefined;
+          case "type":
+            await withExecutorArgument(operation, state, resolver, async (value) => {
+              if (exactTarget !== undefined) {
+                // ElementHandle preserves the wrapper-bound node identity; Locator would re-resolve.
+                // eslint-disable-next-line @typescript-eslint/no-deprecated
+                await exactTarget.type(value);
+                return;
+              }
+              await page.locator(requiredSelector(operation)).pressSequentially(value);
+            });
+            return undefined;
+          case "press":
+            await (exactTarget ?? page.locator(requiredSelector(operation))).press(
+              requiredArgument(operation),
+            );
+            return undefined;
+          case "selectOption":
+            await withExecutorArgument(operation, state, resolver, (value) =>
+              (exactTarget ?? page.locator(requiredSelector(operation))).selectOption(value),
+            );
+            return undefined;
+          case "setInputFiles":
+            await page
+              .locator(requiredSelector(operation))
+              .setInputFiles(requiredFiles(operation).map(toPlaywrightUploadFile));
+            return undefined;
+          case "download":
+            await (exactTarget ?? page.locator(requiredSelector(operation))).click();
+            return undefined;
         }
-        case "goto":
-          await page.goto(requiredArgument(operation));
-          return undefined;
-        case "click":
-          await (exactTarget ?? page.locator(requiredSelector(operation))).click();
-          return undefined;
-        case "fill":
-          await (exactTarget ?? page.locator(requiredSelector(operation))).fill(
-            requiredArgument(operation),
-          );
-          return undefined;
-        case "type":
-          await page
-            .locator(requiredSelector(operation))
-            .pressSequentially(requiredArgument(operation));
-          return undefined;
-        case "press":
-          await (exactTarget ?? page.locator(requiredSelector(operation))).press(
-            requiredArgument(operation),
-          );
-          return undefined;
-        case "selectOption":
-          await (exactTarget ?? page.locator(requiredSelector(operation))).selectOption(
-            requiredArgument(operation),
-          );
-          return undefined;
-        case "setInputFiles":
-          await page
-            .locator(requiredSelector(operation))
-            .setInputFiles(requiredFiles(operation).map(toPlaywrightUploadFile));
-          return undefined;
-        case "download":
-          await (exactTarget ?? page.locator(requiredSelector(operation))).click();
-          return undefined;
+      } finally {
+        activeIntentId = undefined;
       }
     },
     subscribe(sessionId: string, sink: AdapterEventSink): () => void {
@@ -243,11 +269,44 @@ export function playwrightAdapter(
       };
       const listeners: Array<() => void> = [];
       if (options.routeRequests === true) {
+        const routeScope = new AbortController();
         const onRoute = async (route: Route): Promise<void> => {
-          const mutation = requestMutation(route.request(), PLAYWRIGHT_ROUTED_NETWORK_CAPABILITIES);
-          const decision = mutation === null ? undefined : sink.onRouteRequest?.(mutation);
-          if (mutation !== null) sink.onNetworkMutation?.(mutation);
-          if (decision?.verdict === "block") {
+          const mutation = requestMutation(
+            route.request(),
+            PLAYWRIGHT_ROUTED_NETWORK_CAPABILITIES,
+            frameId,
+            pageId,
+            activeIntentId,
+          );
+          if (mutation === null) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          const enforced = mutation.enforcement === "enforced";
+          const egress =
+            enforced && sink.onEgressPayload !== undefined
+              ? inspectRoutedEgress(
+                  route.request(),
+                  mutation.provenance,
+                  sink.onEgressPayload.bind(sink),
+                  routeScope.signal,
+                )
+              : enforced
+                ? {
+                    verdict: "block" as const,
+                    reasons: ["egress_inspection_incomplete" as const],
+                    inspectedBytes: 0,
+                    matchCount: 0,
+                  }
+                : {
+                    verdict: "allow" as const,
+                    reasons: [],
+                    inspectedBytes: 0,
+                    matchCount: 0,
+                  };
+          const decision = enforced ? sink.onRouteRequest?.(mutation, egress) : undefined;
+          sink.onNetworkMutation?.(mutation);
+          if (egress.verdict === "block" || decision?.verdict === "block") {
             await route.abort("blockedbyclient");
             return;
           }
@@ -255,6 +314,7 @@ export function playwrightAdapter(
         };
         void page.route("**/*", onRoute).catch(() => undefined);
         listeners.push(() => {
+          routeScope.abort();
           void page.unroute("**/*", onRoute).catch(() => undefined);
         });
       }
@@ -271,8 +331,20 @@ export function playwrightAdapter(
             options.routeRequests === true
               ? PLAYWRIGHT_ROUTED_NETWORK_CAPABILITIES
               : PLAYWRIGHT_NETWORK_CAPABILITIES,
+            frameId,
+            pageId,
+            activeIntentId,
           );
-          if (mutation !== null) sink.onNetworkMutation?.(mutation);
+          if (
+            mutation !== null &&
+            !(
+              options.routeRequests === true &&
+              request.redirectedFrom() === null &&
+              request.serviceWorker() === null
+            )
+          ) {
+            sink.onNetworkMutation?.(mutation);
+          }
         };
         watchedPage.on("framenavigated", onFrame);
         watchedPage.on("download", onDownload);
@@ -333,36 +405,95 @@ async function observeFrame(
 function requestMutation(
   request: Request,
   capabilities: NetworkCapabilities = PLAYWRIGHT_NETWORK_CAPABILITIES,
+  identifyFrame: (frame: Frame) => string = () => "unavailable",
+  identifyPage: (page: Page) => string = () => "unavailable",
+  actionIntentId?: string,
 ): NetworkMutation | null {
   const type = request.resourceType();
   const previous = request.redirectedFrom();
+  const serviceWorker = request.serviceWorker();
+  const genericGap =
+    previous === null &&
+    type !== "document" &&
+    type !== "websocket" &&
+    type !== "fetch" &&
+    type !== "xhr" &&
+    type !== "ping" &&
+    serviceWorker === null;
   const surface =
     previous !== null
       ? "redirect"
-      : type === "document"
-        ? "navigation"
-        : type === "websocket"
-          ? "websocket"
-          : "fetch";
-  const frameUrl = previous?.url() ?? request.frame().url();
+      : serviceWorker !== null
+        ? "service_worker"
+        : type === "document"
+          ? request.method() === "GET" || request.method() === "HEAD"
+            ? "navigation"
+            : "form"
+          : type === "websocket"
+            ? "websocket"
+            : type === "ping"
+              ? "send_beacon"
+              : "fetch";
+  const frame = safeRequestFrame(request);
+  const frameUrl = previous?.url() ?? serviceWorker?.url() ?? frame?.url();
+  const body = request.postDataBuffer();
   return validateNetworkMutation({
     surface,
-    initiator: previous !== null ? "redirect" : type === "document" ? "unknown" : "page_script",
-    origin: bounded(originOfUrl(frameUrl)),
-    frameOrigin: bounded(originOfUrl(frameUrl)),
+    initiator:
+      previous !== null
+        ? "redirect"
+        : serviceWorker !== null
+          ? "service_worker"
+          : surface === "form"
+            ? "form"
+            : type === "document" || genericGap || surface === "send_beacon"
+              ? "unknown"
+              : "page_script",
+    ...(frameUrl !== undefined ? { origin: bounded(originOfUrl(frameUrl)) } : {}),
+    ...(frameUrl !== undefined ? { frameOrigin: bounded(originOfUrl(frameUrl)) } : {}),
     destination: bounded(request.url()),
-    enforcement: capabilities[surface],
+    enforcement: genericGap ? "observed_only" : capabilities[surface],
+    provenance: {
+      trust: "web",
+      ...(frameUrl !== undefined ? { origin: bounded(originOfUrl(frameUrl)) } : {}),
+      ...(frameUrl !== undefined ? { frameOrigin: bounded(originOfUrl(frameUrl)) } : {}),
+      ...(frame !== null
+        ? { pageId: identifyPage(frame.page()), elementId: identifyFrame(frame) }
+        : {}),
+      timestamp: new Date().toISOString(),
+    },
     metadata: {
       method: request.method(),
       headers: redactHeaders(request.headers()),
-      ...(request.postDataBuffer() !== null ? { bodySize: request.postDataBuffer()?.length } : {}),
+      ...(body !== null
+        ? {
+            bodySize: body.length,
+            ...(body.length <= MAX_NETWORK_BODY_HASH_BYTES
+              ? { bodyHash: createHash("sha256").update(body).digest("hex") }
+              : {}),
+          }
+        : {}),
     },
+    ...(actionIntentId !== undefined ? { actionIntentId } : {}),
     ...(previous !== null ? { redirectHops: redirectHops(request) } : {}),
   });
 }
+
+function safeRequestFrame(request: Request): Frame | null {
+  try {
+    return request.frame();
+  } catch {
+    return null;
+  }
+}
+const MAX_NETWORK_BODY_HASH_BYTES = 64 * 1024;
 function capabilitiesFor(options: PlaywrightAdapterOptions): BrowserAdapterCapabilities {
   return {
     route: options.routeRequests === true,
+    network:
+      options.routeRequests === true
+        ? PLAYWRIGHT_ROUTED_NETWORK_CAPABILITIES
+        : PLAYWRIGHT_NETWORK_CAPABILITIES,
     navigationEvents: true,
     downloadEvents: true,
     popupEvents: true,

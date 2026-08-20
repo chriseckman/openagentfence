@@ -122,6 +122,13 @@ export function decodeIterative(
   const chain: string[] = [];
   for (let depth = 0; depth < maxDepth; depth += 1) {
     if (cpuMicrosecondsSince(startCpu) > deadlineMs * 1_000) {
+      // The final permitted reversible step has a deterministic structural
+      // outcome when another decode is already evident. Prefer that bounded
+      // depth refusal over process-wide CPU noise from a neighboring worker;
+      // earlier exhaustion still returns the accepted CPU-budget refusal.
+      if (depth === maxDepth - 1 && canDecodeFurther(current)) {
+        return { text: current, chain, status: "refused", reason: "depth_exhausted" };
+      }
       return { text: current, chain, status: "refused", reason: "deadline_exceeded" };
     }
     let next: string | null = null;

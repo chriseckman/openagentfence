@@ -40,7 +40,7 @@
       }
     },
     "destination": { "type": "string" },
-    "data": {},
+    "data": { "$ref": "#/$defs/provenancedDatum" },
     "instructionProvenance": {
       "type": "object",
       "required": ["trust"],
@@ -64,5 +64,29 @@
       ]
     },
     "raw": {}
+  },
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["user", "application", "web", "tool", "memory"] },
+        "origin": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "frameOrigin": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "pageId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "elementId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "timestamp": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "provenancedDatum": {
+      "type": "object",
+      "required": ["value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {},
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    }
   }
 }

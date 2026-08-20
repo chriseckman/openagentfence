@@ -2,10 +2,13 @@ import { chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   fingerprint,
+  serializeHandle,
   type ActionIntent,
   type PolicyEngine,
   OpenAgentFence,
 } from "@openagentfence/core";
+import { expectNoRawSecretIn, fixtureSentinel, startFixtureServer } from "@openagentfence/testing";
+import { inMemoryVault } from "@openagentfence/vault";
 import {
   currentState,
   PlaywrightRevalidationError,
@@ -27,6 +30,201 @@ afterAll(async () => {
 });
 
 describe("guarded Playwright execution (OAF-BROWSER-002/014)", () => {
+  it("materializes a bound password only in the final exact Playwright fill", async () => {
+    const fixtures = await startFixtureServer();
+    const page = await browser.newPage();
+    const origin = fixtures.origins[0];
+    const attacker = fixtures.origins[1];
+    if (origin === undefined || attacker === undefined) throw new Error("fixture origin missing");
+    const sentinel = fixtureSentinel();
+    try {
+      await page.goto(`${origin.origin}/secret-form`);
+      const session = new OpenAgentFence({
+        adapter: playwrightAdapter(page),
+        vault: inMemoryVault(),
+      }).start({
+        task: "sign in to the local synthetic fixture",
+        capabilities: {
+          credentials: true,
+          externalCommunication: true,
+          privateNetwork: true,
+        },
+        origins: { allow: [origin.origin] },
+        secrets: [
+          {
+            name: "login-password",
+            kind: "CREDENTIAL",
+            origins: [origin.origin],
+            fieldTypes: ["password"],
+            selector: "#password",
+            formAction: `${origin.origin}/capture`,
+          },
+        ],
+      });
+      const handle = await session.registerSecret("login-password", sentinel, "CREDENTIAL");
+      const secure = wrapPage(session, page);
+
+      await secure.locator("#password").fill(serializeHandle(handle));
+      await secure.click("#submit");
+      await expect
+        .poll(() => fixtures.requests.some((request) => request.url === "/capture"))
+        .toBe(true);
+
+      const delivered = fixtures.requests.filter((request) => request.body.includes(sentinel));
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]?.origin).toBe(origin.origin);
+      expect(
+        fixtures.requests.filter(
+          (request) => request.origin === attacker.origin && request.body.includes(sentinel),
+        ),
+      ).toEqual([]);
+      const trace = await session.end();
+      expect(expectNoRawSecretIn(trace, sentinel)).toBe(true);
+    } finally {
+      await page.close();
+      await fixtures.close();
+    }
+  });
+
+  it("revalidates a mutated form action before lookup and delivers zero secret bytes", async () => {
+    const fixtures = await startFixtureServer();
+    const page = await browser.newPage();
+    const origin = fixtures.origins[0];
+    const attacker = fixtures.origins[1];
+    if (origin === undefined || attacker === undefined) throw new Error("fixture origin missing");
+    const sentinel = fixtureSentinel();
+    try {
+      await page.goto(`${origin.origin}/secret-form`);
+      const session = new OpenAgentFence({
+        adapter: playwrightAdapter(page),
+        vault: inMemoryVault(),
+      }).start({
+        task: "reject a mutated synthetic fixture sink",
+        capabilities: { credentials: true },
+        secrets: [
+          {
+            name: "login-password",
+            kind: "CREDENTIAL",
+            origins: [origin.origin],
+            fieldTypes: ["password"],
+            selector: "#password",
+            formAction: `${origin.origin}/capture`,
+          },
+        ],
+      });
+      const handle = await session.registerSecret("login-password", sentinel, "CREDENTIAL");
+      const originalExecute = session.executeAuthorized.bind(session);
+      let mutated = false;
+      vi.spyOn(session, "executeAuthorized").mockImplementation(async (authorized) => {
+        if (!mutated) {
+          mutated = true;
+          await page.locator("#secret-form").evaluate((form, action) => {
+            (form as unknown as { action: string }).action = action;
+          }, `${attacker.origin}/capture`);
+        }
+        return originalExecute(authorized);
+      });
+
+      await expect(
+        wrapPage(session, page).locator("#password").fill(serializeHandle(handle)),
+      ).rejects.toThrow();
+      expect(await page.locator("#password").inputValue()).toBe("");
+      expect(fixtures.requests.some((request) => request.body.includes(sentinel))).toBe(false);
+      expect(expectNoRawSecretIn(await session.end(), sentinel)).toBe(true);
+    } finally {
+      await page.close();
+      await fixtures.close();
+    }
+  });
+
+  it("blocks a tainted cross-origin form before the attacker receives any bytes", async () => {
+    const fixtures = await startFixtureServer();
+    const page = await browser.newPage();
+    const [origin, attacker] = fixtures.origins;
+    if (origin === undefined || attacker === undefined) throw new Error("fixture origin missing");
+    const sentinel = fixtureSentinel();
+    try {
+      await page.goto(`${origin.origin}/secret-form`);
+      const session = new OpenAgentFence({ adapter: playwrightAdapter(page) }).start({
+        task: "keep tainted form data on the current origin",
+        capabilities: {
+          navigation: "allowlist",
+          externalCommunication: true,
+          privateNetwork: true,
+        },
+        // A navigation allowlist is not a data/sink binding.
+        origins: { allow: [origin.origin, attacker.origin] },
+      });
+      const secure = wrapPage(session, page);
+      await secure.locator("#password").fill(sentinel);
+      await session.observe();
+      await page.locator("#secret-form").evaluate((form, action) => {
+        (form as unknown as { action: string }).action = action;
+      }, `${attacker.origin}/capture`);
+
+      const before = fixtures.requests.filter(
+        (request) => request.origin === attacker.origin,
+      ).length;
+      await expect(secure.click("#submit")).rejects.toThrow("untrusted_cross_origin_egress");
+      expect(
+        fixtures.requests.filter((request) => request.origin === attacker.origin),
+      ).toHaveLength(before);
+      const trace = await session.end();
+      expect(expectNoRawSecretIn(trace, sentinel)).toBe(true);
+      expect(
+        trace.events.some(
+          (event) =>
+            event.kind === "policy_decision" &&
+            Array.isArray(event.data["reasons"]) &&
+            event.data["reasons"].includes("untrusted_cross_origin_egress"),
+        ),
+      ).toBe(true);
+    } finally {
+      await page.close();
+      await fixtures.close();
+    }
+  });
+
+  it("redacts framework errors after a secret has resolved", async () => {
+    const fixtures = await startFixtureServer();
+    const page = await browser.newPage();
+    const origin = fixtures.origins[0];
+    if (origin === undefined) throw new Error("fixture origin missing");
+    const sentinel = fixtureSentinel();
+    try {
+      await page.goto(`${origin.origin}/secret-form`);
+      await page.locator("#password").evaluate((node) => node.setAttribute("readonly", ""));
+      page.setDefaultTimeout(100);
+      const session = new OpenAgentFence({
+        adapter: playwrightAdapter(page),
+        vault: inMemoryVault(),
+      }).start({
+        task: "exercise a synthetic secret sink error",
+        capabilities: { credentials: true },
+        secrets: [
+          {
+            name: "login-password",
+            kind: "CREDENTIAL",
+            origins: [origin.origin],
+            fieldTypes: ["password"],
+            selector: "#password",
+            formAction: `${origin.origin}/capture`,
+          },
+        ],
+      });
+      const handle = await session.registerSecret("login-password", sentinel, "CREDENTIAL");
+      const failure = await wrapPage(session, page)
+        .locator("#password")
+        .fill(serializeHandle(handle))
+        .catch((error: unknown) => error);
+      expect(expectNoRawSecretIn(failure, sentinel)).toBe(true);
+      expect(expectNoRawSecretIn(await session.end(), sentinel)).toBe(true);
+    } finally {
+      await page.close();
+      await fixtures.close();
+    }
+  });
+
   it("authorizes, revalidates, and executes an exact locator operation once", async () => {
     const page = await browser.newPage();
     await page.setContent('<input id="name"><button id="go">go</button>');

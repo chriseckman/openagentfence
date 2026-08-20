@@ -11,10 +11,19 @@ import { createUrlScanner } from "./perception/url/scanner.js";
 import { createCrossOriginNavigationScanner } from "./pre-action/cross-origin-navigation.js";
 import { createLocalNetworkSsrfScanner } from "./pre-action/local-network-ssrf.js";
 import { createFileEffectIntegrityScanner } from "./pre-action/file-effect-integrity.js";
+import { createSecretExfiltrationScanner } from "./pre-action/secret-exfiltration.js";
+import {
+  createSecretSensitiveScanner,
+  type SecretPrefixPattern,
+} from "./perception/secret-sensitive/scanner.js";
+import { createByokInjectionScannerFactory } from "./semantic/byok-injection/scanner.js";
 
 /** The P0 PERCEPTION scanner catalog in priority order (ARCHITECTURE §6). */
-export function defaultScanners(): SecurityScanner[] {
+export function defaultScanners(
+  options: { readonly secretPatterns?: readonly SecretPrefixPattern[] } = {},
+): SecurityScanner[] {
   return [
+    createSecretSensitiveScanner(options.secretPatterns),
     createEncodedPayloadScanner(),
     createUnicodeInvisibleScanner(),
     createHiddenDomScanner(),
@@ -25,6 +34,7 @@ export function defaultScanners(): SecurityScanner[] {
     createUrlScanner(),
     createCrossOriginNavigationScanner(),
     createLocalNetworkSsrfScanner(),
+    createSecretExfiltrationScanner(),
     createFileEffectIntegrityScanner(),
   ];
 }
@@ -40,8 +50,24 @@ export {
   createUrlScanner,
   createCrossOriginNavigationScanner,
   createLocalNetworkSsrfScanner,
+  createSecretExfiltrationScanner,
   createFileEffectIntegrityScanner,
+  createSecretSensitiveScanner,
+  createByokInjectionScannerFactory,
 };
+
+export { BYOK_INJECTION_LIMITS } from "./semantic/byok-injection/scanner.js";
+export type { ByokInjectionScannerOptions } from "./semantic/byok-injection/scanner.js";
+
+export {
+  SECRET_SCAN_LIMITS,
+  validateSecretPattern,
+} from "./perception/secret-sensitive/scanner.js";
+export { secretPatternsFromPolicy } from "./perception/secret-sensitive/scanner.js";
+export type {
+  PolicySecretPrefixPattern,
+  SecretPrefixPattern,
+} from "./perception/secret-sensitive/scanner.js";
 
 export {
   VISIBILITY_CLASSES,

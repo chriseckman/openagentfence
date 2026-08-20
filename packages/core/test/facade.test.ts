@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OpenAgentFence } from "../src/index.js";
 import { fakeAdapter } from "./helpers.js";
 
@@ -70,6 +70,123 @@ describe("OpenAgentFence facade", () => {
     await expect(session.inspectUntrustedText("x".repeat(20), 10)).rejects.toBeInstanceOf(
       RangeError,
     );
+    await session.end();
+  });
+
+  it("creates guard-backed scanners per session through the budget-owning callback", async () => {
+    const classify = vi.fn(async () => ({
+      promptInjection: false,
+      confidence: 0.9,
+      categories: [],
+      recommendedVerdict: "allow" as const,
+    }));
+    let factories = 0;
+    const firewall = new OpenAgentFence({
+      adapter: fakeAdapter(),
+      guardModel: { name: "fake", model: "fake", makesExternalCalls: false, classify },
+      guardScannerFactories: [
+        (runGuard) => {
+          factories += 1;
+          return {
+            id: `guard-backed-${factories}`,
+            phases: ["MODEL_OUTPUT"],
+            kind: "semantic",
+            tier: "tier2",
+            async scan(ctx) {
+              const outcome = await runGuard(
+                {
+                  role: "text_injection",
+                  excerpts: [ctx.redactor.redact("bounded excerpt")],
+                  taskSummary: ctx.redactor.redact("task"),
+                  localeHints: [],
+                  budget: { maxTokens: 2 },
+                },
+                {
+                  signal: ctx.signal,
+                  deadline: ctx.deadline,
+                  maxInputBytes: 100,
+                  maxOutputBytes: 1000,
+                  maxTokens: 2,
+                },
+              );
+              return {
+                scanner: `guard-backed-${factories}`,
+                kind: "semantic",
+                verdict: outcome.ok ? "allow" : "warn",
+                severity: outcome.ok ? "info" : "low",
+                findings: [],
+              };
+            },
+          };
+        },
+      ],
+    });
+    const first = firewall.start({ task: "first" });
+    await first.inspectUntrustedText("first output");
+    await first.end();
+    const second = firewall.start({ task: "second" });
+    await second.inspectUntrustedText("second output");
+    await second.end();
+    expect(factories).toBe(2);
+    expect(classify).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks high-impact actions after a required guard failure but permits harmless reads", async () => {
+    const firewall = new OpenAgentFence({
+      adapter: fakeAdapter(),
+      guardModel: {
+        name: "malformed",
+        model: "fixture",
+        makesExternalCalls: false,
+        classify: async () => ({ authority: "allow" }),
+      },
+      guardScannerFactories: [
+        (runGuard) => ({
+          id: "required-guard",
+          phases: ["MODEL_OUTPUT"],
+          kind: "semantic",
+          tier: "tier2",
+          required: true,
+          async scan(ctx) {
+            const outcome = await runGuard(
+              {
+                role: "text_injection",
+                excerpts: [ctx.redactor.redact("bounded")],
+                taskSummary: ctx.redactor.redact("task"),
+                localeHints: [],
+              },
+              {
+                signal: ctx.signal,
+                deadline: ctx.deadline,
+                maxInputBytes: 100,
+                maxOutputBytes: 100,
+                maxTokens: 1,
+              },
+            );
+            return {
+              scanner: "required-guard",
+              kind: "semantic",
+              verdict: outcome.ok ? "allow" : "warn",
+              severity: outcome.ok ? "info" : "low",
+              findings: [],
+              ...(!outcome.ok ? { metadata: { failureKind: outcome.kind } } : {}),
+            };
+          },
+        }),
+      ],
+    });
+    const session = firewall.start({ task: "read safely" });
+    await session.inspectUntrustedText("harmless output");
+    expect(
+      (await session.authorize({ type: "READ", instructionProvenance: { trust: "application" } }))
+        .verdict,
+    ).toBe("ALLOW");
+    const sideEffect = await session.authorize({
+      type: "CLICK",
+      instructionProvenance: { trust: "application" },
+    });
+    expect(sideEffect.verdict).toBe("BLOCK");
+    expect(sideEffect.reasons).toContain("scanner_unavailable");
     await session.end();
   });
 });

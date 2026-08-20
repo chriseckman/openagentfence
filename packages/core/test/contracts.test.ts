@@ -3,6 +3,7 @@ import { SCANNER_TO_AGGREGATE, AGGREGATE_VERDICTS, SCANNER_VERDICTS } from "../s
 import { leastTrust, TRUST_ORDER } from "../src/index.js";
 import { maxRiskState } from "../src/index.js";
 import { isSecurityPhase } from "../src/index.js";
+import { provenanced, validateDataProvenance } from "../src/index.js";
 
 describe("verdict vocabularies", () => {
   it("maps every scanner verdict to an aggregate verdict", () => {
@@ -26,6 +27,23 @@ describe("provenance trust ordering", () => {
   it("memory is more trusted than web but less than user", () => {
     expect(leastTrust("web", "memory")).toBe("web");
     expect(leastTrust("memory", "user")).toBe("memory");
+  });
+
+  it("validates bounded closed provenance and preserves it in a datum carrier", () => {
+    const provenance = {
+      trust: "web" as const,
+      origin: "https://example.test",
+      frameOrigin: "https://frame.example.test",
+      pageId: "page-1",
+      elementId: "node-1",
+      timestamp: "2026-08-19T00:00:00.000Z",
+    };
+    expect(validateDataProvenance(provenance)).toEqual(provenance);
+    expect(provenanced("web-derived", provenance)).toEqual({ value: "web-derived", provenance });
+    expect(validateDataProvenance({ trust: "web", extra: true })).toBeNull();
+    expect(validateDataProvenance({ trust: "web", timestamp: "not-a-date" })).toBeNull();
+    expect(validateDataProvenance({ trust: "bogus" })).toBeNull();
+    expect(() => provenanced("x", { trust: "web", origin: "" })).toThrow(TypeError);
   });
 });
 

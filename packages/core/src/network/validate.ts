@@ -6,6 +6,7 @@ import {
 } from "./capabilities.js";
 import { NETWORK_INITIATORS, type NetworkInitiator } from "./initiator.js";
 import type { NetworkMutation, NetworkRequestMetadata } from "./mutation.js";
+import { validateDataProvenance } from "../contracts/provenance.js";
 
 /**
  * Runtime validation for network mutations and capability matrices (OAF-CORE-017,
@@ -21,6 +22,7 @@ const MUTATION_KEYS = new Set([
   "frameOrigin",
   "destination",
   "enforcement",
+  "provenance",
   "metadata",
   "actionIntentId",
   "redirectHops",
@@ -116,6 +118,8 @@ export function validateNetworkMutation(input: unknown): NetworkMutation | null 
   if (!isIn(input["enforcement"], ENFORCEMENT_LEVELS)) {
     return null;
   }
+  const provenance = validateDataProvenance(input["provenance"]);
+  if (provenance === null) return null;
   const destination = input["destination"];
   if (
     typeof destination !== "string" ||
@@ -164,6 +168,7 @@ export function validateNetworkMutation(input: unknown): NetworkMutation | null 
     ...(input["frameOrigin"] !== undefined ? { frameOrigin: input["frameOrigin"] as string } : {}),
     destination,
     enforcement: input["enforcement"] as EnforcementLevel,
+    provenance,
     ...(validatedMetadata !== null ? { metadata: validatedMetadata } : {}),
     ...(intentId !== undefined ? { actionIntentId: intentId } : {}),
     ...(redirectHops !== undefined ? { redirectHops } : {}),

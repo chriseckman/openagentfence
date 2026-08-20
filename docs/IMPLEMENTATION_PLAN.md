@@ -1091,11 +1091,19 @@ environment); Anthropic, Google/Gemini, and xAI are P0 per PRD §13.3 but
 parallel and off the vertical-slice path. Every provider declares
 `makesExternalCalls` for documentation flags (PRD §20).
 
+Execution history: OAF-GUARD-001 through OAF-GUARD-006 and OAF-GUARD-010
+were completed in the M3-M5 security-enforcement series (PS-022 through
+PS-028). OAF-GUARD-004 is an intentionally typed-unavailable surface because
+the verified OpenCode 1.18.18 API did not establish a tool-free strict-JSON
+classification contract. Under the approved A-01 decision, Ollama is the
+local-first transport, while any model recommendation remains deferred until
+OAF-REL-001 produces reproducible corpus measurements.
+
 | ID | Title | Priority | Depends on |
 |----|-------|----------|------------|
 | OAF-GUARD-001 | `guardProvider(name, opts)` factory, shared config surface, guard-model roles, structured-output validation, budget hooks, custom-callback adapter | P0 | OAF-CORE-012, OAF-CORE-018 |
 | OAF-GUARD-002 | OpenAI-compatible HTTP adapter | P0 | OAF-GUARD-001 |
-| OAF-GUARD-003 | Ollama / local adapter and recommended local default (Q15) | P0 | OAF-GUARD-001 |
+| OAF-GUARD-003 | Ollama / local-first adapter (Q15 transport) | P0 | OAF-GUARD-001 |
 | OAF-GUARD-004 | OpenCode adapter | P0 | OAF-GUARD-001 |
 | OAF-GUARD-005 | Anthropic, Google/Gemini, and xAI adapters | P0 | OAF-GUARD-001 |
 | OAF-GUARD-006 | BYOK prompt-injection scanner | P0 | OAF-GUARD-001, OAF-BROWSER-010, OAF-CORE-008 |
@@ -1109,7 +1117,7 @@ parallel and off the vertical-slice path. Every provider declares
 - Objective: One application-owned configuration surface for all providers: `guardProvider(name, { model, apiKey?, baseUrl?, timeoutMs, fallback? })`, per-role selection (`text_injection`, `task_alignment`; `visual_injection` reserved for v0.2), schema validation of every response, retry/timeout wrappers, budget accounting via OAF-CORE-012 hooks, and the `custom` callback adapter as the reference implementation (PRD §13.16; ARCHITECTURE §17; ADR-0009). There is no provider block in policy.
 - Dependencies: OAF-CORE-012, OAF-CORE-018
 - Files/packages affected: `packages/providers/src/{factory,config,roles,validate,budget,custom}.ts`, per-provider entry points `packages/providers/src/<name>/index.ts` with `exports` map so users install only what they use.
-- Implementation notes: The application resolves environment variables or another secret source and passes credentials only to the provider factory. Providers receive only `GuardClassificationRequest` as classification content (redacted by type); a provider credential is applied only as transport authentication to the configured endpoint and is never added to request content, logs, errors, findings, events, traces, caches, `PolicyEngine`, or `core`. `fallback: local` chains to the Ollama adapter when the primary fails, with a `scanner_unavailable` warning if both fail. Never log request bodies or credentials; never cache here (OAF-GUARD-007). Vendor SDKs, if used, are thin and isolated per entry point (ARCHITECTURE §3).
+- Implementation notes: The application resolves environment variables or another secret source and passes credentials only to the provider factory. Providers receive only `GuardClassificationRequest` as classification content (redacted by type); a provider credential is applied only as transport authentication to the configured endpoint and is never added to request content, logs, errors, findings, events, traces, caches, `PolicyEngine`, or `core`. An explicit `fallback: GuardModelProvider` runs as a separately budgeted dispatch within the same deadline and bounds, with `scanner_unavailable` evidence if both fail. Never log request bodies or credentials; never cache here (OAF-GUARD-007). P0 transports use built-in `fetch` and no vendor SDKs (D-10).
 - Acceptance criteria: Switching the factory's provider name between any two implemented adapters requires no policy or `core` change; an invalid/oversized/late response is rejected before reaching scanners; `max_guard_calls` and input/output token budgets decrement per call; cancellation reaches the transport; tests prove a synthetic provider credential is absent from classification content, structured errors, events, and traces.
 - Tests required: factory tests; validation tests with malformed/oversized responses; cancellation/timeout/budget tests; fallback chain tests with fake providers.
 - Security considerations: TB3; INV-03, INV-05, INV-09, INV-16, INV-20; ADR-0004 items 3, 5, 7.
@@ -1125,23 +1133,23 @@ parallel and off the vertical-slice path. Every provider declares
 - Security considerations: TB3; ADR-0004 item 5 (`makesExternalCalls: true`).
 - Definition of done: Standard DoD; plus documented as making external calls.
 
-### OAF-GUARD-003 — Ollama / local adapter and recommended local default (Q15)   (P0)
-- Objective: Adapter for Ollama (`base_url` default `http://localhost:11434`, no API key) and, per the Q15 decision (PRD v0.7 §13.16: **Ollama is the default local provider**), select and document the recommended local model/prompt configuration by measuring candidates against the corpus (recall, false-positive rate, latency; numbers only once measured by OAF-TEST-011), evaluating a dedicated small injection classifier served locally as an alternative to a general small instruct model.
+### OAF-GUARD-003 — Ollama / local-first adapter (Q15 transport)   (P0)
+- Objective: Adapter for Ollama (`base_url` default `http://localhost:11434`, no API key) as the local-first provider transport. Model and prompt recommendations require reproducible corpus measurements and remain deferred to OAF-REL-001; this task makes no unmeasured performance claim.
 - Dependencies: OAF-GUARD-001
 - Files/packages affected: `packages/providers/src/ollama/{index,client}.ts`, `docs/scanners.md` local-default section, ARCHITECTURE Q15 update.
 - Implementation notes: Local calls are exempt from the external-call flag but documented; the private-network policy of OAF-SEC-002 does not apply to provider traffic (provider calls originate from the host, not the browser) — state this explicitly.
-- Acceptance criteria: Contract tests pass against a mock Ollama endpoint; docs name Ollama as the default local provider, the measured recommended model, and how to install it.
+- Acceptance criteria: Contract tests pass against a mock Ollama endpoint; docs name Ollama as the local-first provider, explain explicit application-owned model selection, and make no model recommendation until OAF-REL-001 measurements exist.
 - Tests required: contract tests; optional CI job that runs against a real local model is allowed to be skipped when unavailable.
 - Security considerations: TB3; ADR-0004 items 1, 6.
 - Definition of done: Standard DoD.
 
 ### OAF-GUARD-004 — OpenCode adapter   (P0)
-- Objective: Adapter that reuses models/providers configured in the local OpenCode environment (via OpenCode's programmatic API), so developers reuse existing credentials; OpenCode remains optional (PRD §13.3, §13.16).
+- Objective: Reserve an optional OpenCode provider surface, enabling it only when official and installed-version evidence establishes a tool-free, strict-JSON, bounded classification contract. Under D-03, the verified 1.18.18 surface remains typed unavailable.
 - Dependencies: OAF-GUARD-001
 - Files/packages affected: `packages/providers/src/opencode/{index,resolve-config}.ts`; OpenCode as an optional peer dependency of that entry point only.
-- Implementation notes: Discover configured providers/models; forward the redacted request; treat OpenCode as any other untrusted provider for authorization. If OpenCode is absent, the factory throws a typed error at construction, never at classification time.
-- Acceptance criteria: With a mocked OpenCode config, classification works; without OpenCode installed, `guardProvider("opencode")` fails fast with guidance.
-- Tests required: contract tests with a mocked OpenCode surface.
+- Implementation notes: Do not import the SDK, inspect user configuration, start a server, forward a request, or infer an undocumented wire. `guardProvider("opencode")` throws a value-free typed construction error until the required official contract exists.
+- Acceptance criteria: Default imports have no OpenCode dependency or side effect; construction fails fast and value-free as documented. Unavailability is not an M5 blocker.
+- Tests required: default-import, missing-surface, strict-config, and credential-non-disclosure tests.
 - Security considerations: TB3; ADR-0004 item 3; no runtime requirement on OpenCode for `core`.
 - Definition of done: Standard DoD; plus README notes which OpenCode versions were tested.
 
@@ -1149,14 +1157,14 @@ parallel and off the vertical-slice path. Every provider declares
 - Objective: Three thin adapters (separate entry points; may be delivered as three PRs) sharing the OpenAI-compatible adapter's prompt and validation.
 - Dependencies: OAF-GUARD-001
 - Files/packages affected: `packages/providers/src/{anthropic,google,xai}/index.ts`.
-- Implementation notes: Prefer plain HTTP over vendor SDKs; if an SDK is used it must be isolated to its entry point. Model ids in docs are examples, not defaults enforced by code. Off the vertical-slice critical path (Q12).
+- Implementation notes: Use documented direct HTTP through built-in `fetch`; no vendor SDK is part of the P0 transport (D-10). Model ids in docs are examples, not defaults enforced by code. Off the vertical-slice critical path (Q12).
 - Acceptance criteria: Each passes the shared contract tests against mock endpoints; each is documented as making external calls.
 - Tests required: contract tests.
 - Security considerations: TB3; ADR-0004.
 - Definition of done: Standard DoD.
 
 ### OAF-GUARD-006 — BYOK prompt-injection scanner   (P0)
-- Objective: Tier 2 semantic PERCEPTION/MODEL_OUTPUT scanner that sends **targeted, redacted, bounded excerpts** (findings' regions, hidden text, decoded payloads, extracted text — never whole-page HTML by default) to the configured `text_injection` provider, validates `{promptInjection, confidence, categories, recommendedVerdict}`, and emits untrusted findings as evidence only (PRD §13.3; ADR-0003/0004).
+- Objective: Tier 2 semantic PERCEPTION/MODEL_OUTPUT scanner that sends **targeted, redacted, bounded excerpts** (independently selected deterministic heuristic regions, hidden text, decoded payloads, extracted text — never whole-page HTML by default) to the configured `text_injection` provider, validates `{promptInjection, confidence, categories, recommendedVerdict}`, and emits untrusted findings as evidence only (PRD §13.3; ADR-0003/0004).
 - Dependencies: OAF-GUARD-001, OAF-BROWSER-010, OAF-CORE-008
 - Files/packages affected: `packages/scanners/src/semantic/byok-injection/{scanner,excerpts,prompt}.ts`.
 - Implementation notes: `kind: "semantic"`; runs after deterministic scanners; skips when a deterministic critical block already exists (cheap-first); excerpt selection bounded by size; language-neutral prompt evaluated against non-English fixtures (OAF-TEST-008); redaction registry applied before send; results map to `warn`/`approve`/`block` recommendations that the aggregator treats at precedence layer 5; policy `injection.high_confidence` may elevate to `RESTRICT`.
@@ -1224,6 +1232,11 @@ parallel and off the vertical-slice path. Every provider declares
 Implements PRD §13.4 (v0.1 coarse taint per §34 Decision 8) and §13.12.
 The data-flow graph is v0.2 and is not planned here.
 
+Execution history: OAF-PROV-001 and OAF-PROV-002 were pulled forward and
+completed in the M4 security-enforcement series (PS-012 and PS-013). They stay
+listed below as durable dependency history. OAF-PROV-003 and OAF-PROV-005
+remain the M6 P0 work; OAF-PROV-004 and OAF-PROV-006 remain P1.
+
 | ID | Title | Priority | Depends on |
 |----|-------|----------|------------|
 | OAF-PROV-001 | DataProvenance attachment across observations, findings, actions, memory | P0 | OAF-CORE-001, OAF-CORE-011, OAF-CORE-005 |
@@ -1233,7 +1246,7 @@ The data-flow graph is v0.2 and is not planned here.
 | OAF-PROV-005 | Memory write/read guard, PERSISTENCE scanners, minimum read enforcement (Q10) | P0 | OAF-PROV-001, OAF-PROV-002, OAF-BROWSER-010, OAF-DATA-001 |
 | OAF-PROV-006 | Enhanced cross-session memory policy and reinspection | P1 | OAF-PROV-005 |
 
-### OAF-PROV-001 — DataProvenance attachment everywhere   (P0)
+### OAF-PROV-001 — DataProvenance attachment everywhere   (P0, completed early in PS-012)
 - Objective: Guarantee every observation, finding, action datum, sanitized text span, egress payload, and memory candidate carries `DataProvenance` (`trust`, `origin`, `frameOrigin`, `pageId`, `elementId`, `timestamp`), and add provenance-derived findings (e.g. `instruction_provenance_untrusted`) to the aggregator's `provenance` bucket (PRD §13.4; ARCHITECTURE §11).
 - Dependencies: OAF-CORE-001, OAF-CORE-011, OAF-CORE-005
 - Files/packages affected: `packages/core/src/provenance/{attach,labels,findings}.ts`; adapters' observation builders; orchestrator sanitization path.
@@ -1243,7 +1256,7 @@ The data-flow graph is v0.2 and is not planned here.
 - Security considerations: INV-13; A14; TB2.
 - Definition of done: Standard DoD.
 
-### OAF-PROV-002 — Session taint floor   (P0)
+### OAF-PROV-002 — Session taint floor   (P0, completed early in PS-013)
 - Objective: Once untrusted content enters model context (any observation offered to the agent, any `extract` result), label all subsequent model outputs, plans, and proposed actions at most `web` trust for authorization; make `instructionProvenance` untrusted from that point so rules like "cross-origin navigation instructed by untrusted content" apply (PRD §13.4, §34 Decision 8; ARCHITECTURE §11).
 - Dependencies: OAF-PROV-001, OAF-CORE-009
 - Files/packages affected: `packages/core/src/provenance/taint-floor.ts`, session state, Action Guard integration, reason `navigation_instruction_originated_from_untrusted_dom`.
@@ -1678,7 +1691,7 @@ the v0.1 tag.
 | Q12 Provider adapter set in v0.1 | Resolved in PRD v0.6 §36 Phase 5 and §8 of this plan; OAF-GUARD-001 documents it | M5 |
 | Q13 Concurrency model for scanners | Resolved in ARCHITECTURE §6; assigned to OAF-CORE-008 | M1 |
 | Q14 Trace schema versioning and replay contract | Schema resolved in ARCHITECTURE §14; assigned to OAF-CORE-010; replay assigned to OAF-REL-005 (P1) | M1 / M8 |
-| Q15 Local classifier recommendation | Ollama is the default local provider (PRD v0.7); model chosen by measurement in OAF-GUARD-003 / OAF-REL-001 | M5 / M8 |
+| Q15 Local classifier recommendation | Ollama is the local-first provider transport; model recommendation is deferred until reproducible OAF-REL-001 measurements exist (A-01) | M5 transport / M8 measurement |
 | Q16 State-bound authorization / TOCTOU | Proposed ADR-0010; PRD v0.9 requires exact state-bound execution. Accept the ADR before OAF-CORE-015/OAF-BROWSER-014/015/OAF-SEC-010 implementation. Stagehand exact-action defect OAF-BROWSER-013 is already fixed under ADR-0002. | Before M3 |
 
 ---

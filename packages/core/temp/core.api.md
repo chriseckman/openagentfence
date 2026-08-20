@@ -8,6 +8,9 @@
 export const ACTION_TYPES: readonly ["READ", "SCROLL", "CLICK", "TYPE", "FILL", "NAVIGATE", "SUBMIT", "UPLOAD", "DOWNLOAD", "OPEN_TAB", "CLOSE_TAB", "COPY", "PASTE", "EXECUTE_SCRIPT", "AUTHENTICATE", "PURCHASE", "DELETE", "PUBLISH", "MESSAGE", "CHANGE_SETTING", "UNKNOWN"];
 
 // @public
+export function actionEgressPayloads(action: CanonicalAction, intent?: ActionIntent): readonly EgressPayload[];
+
+// @public
 export interface ActionIntent {
     // (undocumented)
     readonly action: CanonicalAction;
@@ -98,12 +101,13 @@ export interface AdapterEvent {
 export interface AdapterEventSink {
     // (undocumented)
     onDownload(event: AdapterEvent): void;
+    onEgressPayload?(payload: EgressPayload, signal?: AbortSignal): EgressInspection;
     // (undocumented)
     onNavigation(event: AdapterEvent): void;
     // (undocumented)
     onNetworkMutation?(mutation: NetworkMutation): void;
     onPopup(event: AdapterEvent): boolean;
-    onRouteRequest?(mutation: NetworkMutation): NetworkGuardDecision;
+    onRouteRequest?(mutation: NetworkMutation, egressInspection?: EgressInspection): NetworkGuardDecision;
 }
 
 // @public (undocumented)
@@ -116,7 +120,10 @@ export type AggregateVerdict = (typeof AGGREGATE_VERDICTS)[number];
 export function applyRiskSignal(current: SessionRisk, signal: RiskSignal, policy?: RiskPolicy): RiskTransition;
 
 // @public
-export function applySanitizations(base: string, sanitized: readonly string[]): string;
+export function applySanitizationPipeline(base: string, spans: readonly SanitizationSpan[], sanitized: readonly ProvenancedDatum<string>[]): string;
+
+// @public
+export function applySanitizations(base: string, sanitized: readonly ProvenancedDatum<string>[]): string;
 
 // @public
 export function applySanitizationSpans(base: string, spans: readonly SanitizationSpan[]): string;
@@ -232,6 +239,7 @@ export interface BrowserAdapterCapabilities {
     // (undocumented)
     readonly downloadEvents: boolean;
     readonly navigationEvents: boolean;
+    readonly network: NetworkCapabilities;
     // (undocumented)
     readonly popupEvents: boolean;
     // (undocumented)
@@ -310,8 +318,7 @@ export function buildTrustedIntentContext(input: TrustedIntentContext): TrustedI
 
 // @public
 export interface CanonicalAction {
-    // (undocumented)
-    readonly data?: unknown;
+    readonly data?: ProvenancedDatum;
     // (undocumented)
     readonly destination?: string;
     // (undocumented)
@@ -367,10 +374,43 @@ export interface ConformanceCheck {
 export const CORE_VERSION = "0.0.0";
 
 // @public
+export function correlateNetworkMutation(mutation: NetworkMutation, activeIntent: ActionIntent | undefined, now?: number): NetworkIntentCorrelation;
+
+// @public (undocumented)
+export function createEgressInspector(options: EgressInspectorOptions): EgressInspector;
+
+// @public
 export function createPolicyRuntimeState(input: unknown): ValidatedPolicyRuntimeState;
 
 // @public (undocumented)
 export function createRiskAggregator(): RiskAggregator;
+
+// @public
+export function createScopedSecretResolver(options: ScopedSecretResolverOptions): ScopedSecretResolver;
+
+// @public (undocumented)
+export interface CrossOriginExfiltrationEvaluation {
+    // (undocumented)
+    readonly blocked: boolean;
+    // (undocumented)
+    readonly reasons: readonly ReasonCode[];
+}
+
+// @public (undocumented)
+export interface CrossOriginExfiltrationFacts {
+    // (undocumented)
+    readonly currentOrigin?: string;
+    // (undocumented)
+    readonly destinationInTaskScope: boolean;
+    // (undocumented)
+    readonly exactSinkBound: boolean;
+    // (undocumented)
+    readonly handlePresent: boolean;
+    // (undocumented)
+    readonly sessionTainted: boolean;
+    // (undocumented)
+    readonly valueMatched: boolean;
+}
 
 // @public
 export interface DataProvenance {
@@ -475,7 +515,108 @@ export function detectHandles(data: unknown, maxDepth?: number): SecretHandle[];
 export const DETECTOR_TIERS: readonly ["tier0", "tier1", "tier2"];
 
 // @public (undocumented)
+export interface DetectorRouterInput {
+    // (undocumented)
+    readonly provenance: DataProvenance;
+    // (undocumented)
+    readonly redactor: RedactionRegistry;
+    // (undocumented)
+    readonly request: GuardClassificationRequest;
+    // (undocumented)
+    readonly runTier0: () => Promise<readonly ScanResult[]>;
+    // (undocumented)
+    readonly tier1?: SemanticTierSlot;
+    // (undocumented)
+    readonly tier2?: SemanticTierSlot;
+}
+
+// @public (undocumented)
+export interface DetectorRouterResult {
+    readonly blockingFailure: boolean;
+    // (undocumented)
+    readonly metrics: readonly DetectorTierMetric[];
+    // (undocumented)
+    readonly results: readonly ScanResult[];
+}
+
+// @public (undocumented)
 export type DetectorTier = (typeof DETECTOR_TIERS)[number];
+
+// @public (undocumented)
+export interface DetectorTierMetric {
+    // (undocumented)
+    readonly outcome?: "success" | GuardProviderFailureKind;
+    // (undocumented)
+    readonly provider?: string;
+    // (undocumented)
+    readonly skipReason?: TierSkipReason;
+    // (undocumented)
+    readonly status: "invoked" | "skipped";
+    // (undocumented)
+    readonly tier: DetectorTier;
+}
+
+// @public (undocumented)
+export const EGRESS_SINKS: readonly ["url_query", "url_fragment", "form_body", "typed_value", "message", "header", "upload_name", "upload_path", "text_body", "routed_request_body"];
+
+// @public (undocumented)
+export interface EgressInspection {
+    // (undocumented)
+    readonly inspectedBytes: number;
+    // (undocumented)
+    readonly matchCount: number;
+    // (undocumented)
+    readonly reasons: readonly ReasonCode[];
+    // (undocumented)
+    readonly verdict: "allow" | "block";
+}
+
+// @public
+export interface EgressInspector {
+    // (undocumented)
+    inspect(payload: EgressPayload, signal?: AbortSignal): EgressInspection;
+}
+
+// @public (undocumented)
+export interface EgressInspectorOptions {
+    // (undocumented)
+    readonly isDestinationAllowed: (fingerprint: string, destinationOrigin: string, sink: EgressPayload["sink"], fieldType?: string) => boolean;
+    // (undocumented)
+    readonly match: (value: string, signal?: AbortSignal) => EgressMatchResult;
+    // (undocumented)
+    readonly maxValueBytes?: number;
+}
+
+// @public
+export function egressMatchForms(value: string): readonly string[];
+
+// @public (undocumented)
+export interface EgressMatchResult {
+    // (undocumented)
+    readonly fingerprints: readonly string[];
+    // (undocumented)
+    readonly incomplete: boolean;
+}
+
+// @public
+export interface EgressPayload {
+    // (undocumented)
+    readonly byteLength: number;
+    // (undocumented)
+    readonly complete: boolean;
+    // (undocumented)
+    readonly destination: string;
+    readonly fieldType?: string;
+    // (undocumented)
+    readonly provenance: DataProvenance;
+    // (undocumented)
+    readonly sink: EgressSink;
+    // (undocumented)
+    readonly value: string;
+}
+
+// @public (undocumented)
+export type EgressSink = (typeof EGRESS_SINKS)[number];
 
 // @public
 export const emptyPolicyRuntimeState: ValidatedPolicyRuntimeState;
@@ -524,7 +665,13 @@ export interface EnvelopeNarrowing {
 }
 
 // @public
+export function evaluateCrossOriginExfiltration(action: CanonicalAction, facts: CrossOriginExfiltrationFacts): CrossOriginExfiltrationEvaluation;
+
+// @public
 export function evaluateDestination(input: DestinationEvaluationInput): DestinationEvaluation;
+
+// @public
+export function evaluateNetworkMutation(input: NetworkMutationEvaluationInput): NetworkGuardDecision;
 
 // @public
 export function evaluateRedirectChain(input: RedirectChainEvaluationInput): DestinationEvaluation;
@@ -546,6 +693,15 @@ export interface ExactActionExecutor {
     // (undocumented)
     execute(): Promise<unknown>;
 }
+
+// @public
+export interface ExecutorSecretLookup {
+    // (undocumented)
+    lookup(handle: SecretHandle, signal?: AbortSignal): Promise<string | null>;
+}
+
+// @public (undocumented)
+export const EXFILTRATION_ACTION_TYPES: readonly ["NAVIGATE", "SUBMIT", "UPLOAD", "MESSAGE", "PASTE"];
 
 // @public (undocumented)
 export interface Finding {
@@ -641,6 +797,14 @@ export interface GuardClassificationRequest {
     readonly taskSummary: RedactedEvidence;
 }
 
+// @public (undocumented)
+export interface GuardDispatchReservation {
+    // (undocumented)
+    readonly calls: number;
+    // (undocumented)
+    readonly tokens: number;
+}
+
 // @public
 export interface GuardExecutionConstraints {
     // (undocumented)
@@ -655,6 +819,7 @@ export interface GuardExecutionConstraints {
     readonly remainingCalls?: number;
     // (undocumented)
     readonly remainingTokens?: number;
+    readonly reserveDispatch?: (reservation: GuardDispatchReservation) => boolean;
     // (undocumented)
     readonly signal: AbortSignal;
 }
@@ -672,7 +837,7 @@ export interface GuardModelProvider {
 }
 
 // @public (undocumented)
-export type GuardProviderFailureKind = "timeout" | "cancelled" | "exception" | "malformed" | "oversized" | "budget_exhausted";
+export type GuardProviderFailureKind = "timeout" | "cancelled" | "exception" | "malformed" | "oversized" | "budget_exhausted" | "unavailable";
 
 // @public (undocumented)
 export type GuardProviderOutcome = {
@@ -683,8 +848,18 @@ export type GuardProviderOutcome = {
     readonly kind: GuardProviderFailureKind;
 };
 
+// @public
+export class GuardProviderRuntimeError extends Error {
+    constructor(kind: GuardProviderFailureKind);
+    // (undocumented)
+    readonly kind: GuardProviderFailureKind;
+}
+
 // @public (undocumented)
 export type GuardRole = (typeof GUARD_ROLES)[number];
+
+// @public
+export function guardTokenReservation(request: GuardClassificationRequest, constraints: GuardExecutionConstraints): number;
 
 // @public (undocumented)
 export const HANDLE_KINDS: readonly ["SECRET", "PII", "CREDENTIAL"];
@@ -694,6 +869,9 @@ export function hash(input: string): string;
 
 // @public (undocumented)
 export function hostnameOf(href: string): string | null;
+
+// @public
+export function inferSecretFieldType(attributes: Readonly<Record<string, string>>): string | null;
 
 // @public
 export function intentBoundState(intent: ActionIntent): Record<string, unknown>;
@@ -774,6 +952,9 @@ export function kindForTier(tier: DetectorTier): "deterministic" | "semantic";
 export function leastTrust(a: TrustLevel, b: TrustLevel): TrustLevel;
 
 // @public
+export const MAX_EGRESS_VALUE_BYTES: number;
+
+// @public
 export function maxRiskState(a: RiskState, b: RiskState): RiskState;
 
 // @public
@@ -832,6 +1013,19 @@ export interface NetworkGuardInput {
 export type NetworkInitiator = (typeof NETWORK_INITIATORS)[number];
 
 // @public
+export interface NetworkIntentCorrelation {
+    // (undocumented)
+    readonly intentId?: string;
+    // (undocumented)
+    readonly reasons: readonly ReasonCode[];
+    // (undocumented)
+    readonly status: NetworkIntentCorrelationStatus;
+}
+
+// @public (undocumented)
+export type NetworkIntentCorrelationStatus = "none" | "matched" | "mismatched" | "expired";
+
+// @public
 export interface NetworkMutation {
     // (undocumented)
     readonly actionIntentId?: string;
@@ -847,9 +1041,24 @@ export interface NetworkMutation {
     readonly metadata?: NetworkRequestMetadata;
     // (undocumented)
     readonly origin?: string;
+    readonly provenance: DataProvenance;
     readonly redirectHops?: number;
     // (undocumented)
     readonly surface: NetworkSurface;
+}
+
+// @public (undocumented)
+export interface NetworkMutationEvaluationInput {
+    readonly correlation?: NetworkIntentCorrelation;
+    // (undocumented)
+    readonly destinationRules?: DestinationRules;
+    readonly egressInspection?: EgressInspection;
+    // (undocumented)
+    readonly envelope: CapabilityEnvelope;
+    // (undocumented)
+    readonly mutation: NetworkMutation;
+    // (undocumented)
+    readonly riskState: RiskState;
 }
 
 // @public
@@ -896,6 +1105,7 @@ export interface OpenAgentFenceOptions {
     readonly approvalHandler?: ApprovalHandler;
     // (undocumented)
     readonly guardModel?: GuardModelProvider;
+    readonly guardScannerFactories?: readonly SessionGuardScannerFactory[];
     // (undocumented)
     readonly limits?: ResourceLimits;
     // (undocumented)
@@ -954,8 +1164,7 @@ export interface PerceptionResult {
     readonly findings: readonly Finding[];
     // (undocumented)
     readonly observation: PageObservation;
-    // (undocumented)
-    readonly sanitizedText: string;
+    readonly sanitizedText: ProvenancedDatum<string>;
 }
 
 // @public (undocumented)
@@ -973,13 +1182,25 @@ export type PhasePayload = {
     readonly output: ModelOutput;
 } | {
     readonly kind: "memoryCandidate";
-    readonly candidate: unknown;
+    readonly candidate: ProvenancedDatum;
 } | {
     readonly kind: "egressPayload";
-    readonly payload: unknown;
+    readonly payload: ProvenancedDatum;
 } | {
     readonly kind: "none";
 };
+
+// @public
+export interface PhaseTierMetric {
+    // (undocumented)
+    readonly scannerCount: number;
+    // (undocumented)
+    readonly skipReason?: "not_configured" | "deterministic_critical" | "cancelled";
+    // (undocumented)
+    readonly status: "invoked" | "skipped";
+    // (undocumented)
+    readonly tier: DetectorTier;
+}
 
 // @public
 export interface PluginManifest {
@@ -1020,6 +1241,9 @@ export interface PolicyEngine {
     // (undocumented)
     evaluate(input: PolicyEvaluationInput): PolicyDecision;
     readonly policyHash: string;
+    readonly secretResolution?: {
+        readonly restrictedMode: "keep_approved_sinks" | "deny_all";
+    };
 }
 
 // @public
@@ -1231,6 +1455,17 @@ export interface ProbeTruncation {
     readonly time: boolean;
 }
 
+// @public
+export function provenanced<T>(value: T, provenance: unknown): ProvenancedDatum<T>;
+
+// @public
+export interface ProvenancedDatum<T = unknown> {
+    // (undocumented)
+    readonly provenance: DataProvenance;
+    // (undocumented)
+    readonly value: T;
+}
+
 // @public (undocumented)
 export const REASON_CODE_DESCRIPTIONS: Readonly<Record<ReasonCode, string>>;
 
@@ -1238,6 +1473,9 @@ export const REASON_CODE_DESCRIPTIONS: Readonly<Record<ReasonCode, string>>;
 export const REASON_CODES: {
     readonly destination_not_allowed: "destination_not_allowed";
     readonly secret_sink_not_allowed: "secret_sink_not_allowed";
+    readonly sensitive_value_in_egress: "sensitive_value_in_egress";
+    readonly egress_inspection_incomplete: "egress_inspection_incomplete";
+    readonly untrusted_cross_origin_egress: "untrusted_cross_origin_egress";
     readonly navigation_instruction_originated_from_untrusted_dom: "navigation_instruction_originated_from_untrusted_dom";
     readonly session_contains_high_confidence_prompt_injection: "session_contains_high_confidence_prompt_injection";
     readonly scanner_unavailable: "scanner_unavailable";
@@ -1280,7 +1518,7 @@ export const REASON_CODES: {
 export type ReasonCode = (typeof REASON_CODES)[keyof typeof REASON_CODES];
 
 // @public (undocumented)
-export function redactDeep(value: unknown, redactor: Redactor): unknown;
+export function redactDeep(value: unknown, redactor: Redactor, depth?: number, seen?: WeakSet<object>): unknown;
 
 // @public
 export type RedactedEvidence = string & {
@@ -1289,7 +1527,12 @@ export type RedactedEvidence = string & {
 
 // @public
 export class RedactionRegistry implements Redactor {
+    containsSecret(value: string): boolean;
     isSecret(value: string): boolean;
+    matchEgress(value: string, signal?: AbortSignal): {
+        readonly fingerprints: readonly string[];
+        readonly incomplete: boolean;
+    };
     // (undocumented)
     redact(input: string): RedactedEvidence;
     // (undocumented)
@@ -1343,9 +1586,13 @@ export interface ResolvedCapabilities {
 // @public
 export interface ResolverSessionState {
     // (undocumented)
-    readonly permitsCredentialUse: boolean;
+    readonly actionStateValid: boolean;
+    // (undocumented)
+    readonly policyHash: string;
     // (undocumented)
     readonly riskState: RiskState;
+    // (undocumented)
+    readonly sessionActive: boolean;
 }
 
 // @public (undocumented)
@@ -1461,6 +1708,9 @@ export interface RiskTransition {
 export function runAdapterConformance(adapter: BrowserAdapter): Promise<AdapterConformanceReport>;
 
 // @public
+export function runDetectorRouter(input: DetectorRouterInput): Promise<DetectorRouterResult>;
+
+// @public
 export function runGuardProvider(provider: GuardModelProvider, request: GuardClassificationRequest, constraints: GuardExecutionConstraints): Promise<GuardProviderOutcome>;
 
 // @public
@@ -1473,11 +1723,17 @@ export interface RunPhaseResult {
     // (undocumented)
     readonly oversized: boolean;
     // (undocumented)
+    readonly requiredGuardChecked: boolean;
+    // (undocumented)
+    readonly requiredGuardFailure: boolean;
+    // (undocumented)
     readonly results: readonly ScanResult[];
     // (undocumented)
     readonly sanitizationSpans: readonly SanitizationSpan[];
     // (undocumented)
-    readonly sanitizedTexts: readonly string[];
+    readonly sanitizedTexts: readonly ProvenancedDatum<string>[];
+    // (undocumented)
+    readonly tierMetrics: readonly PhaseTierMetric[];
 }
 
 // @public (undocumented)
@@ -1489,9 +1745,10 @@ export function sameOrigin(a: string, b: string): boolean;
 // @public (undocumented)
 export function sameSite(a: string, b: string): boolean;
 
-// @public
+// @public (undocumented)
 export interface SanitizationSpan {
     readonly end: number;
+    readonly provenance: DataProvenance;
     readonly replacement: string;
     readonly start: number;
 }
@@ -1546,7 +1803,7 @@ export interface ScanResult {
     // (undocumented)
     readonly metadata?: Readonly<Record<string, unknown>>;
     readonly sanitizations?: readonly SanitizationSpan[];
-    readonly sanitized?: string;
+    readonly sanitized?: ProvenancedDatum<string>;
     // (undocumented)
     readonly scanner: string;
     // (undocumented)
@@ -1580,15 +1837,49 @@ export interface ScopedContextView {
 }
 
 // @public
+export interface ScopedSecretResolver extends SecretResolver {
+    // (undocumented)
+    commit(): void;
+    // (undocumented)
+    revoke(): void;
+}
+
+// @public (undocumented)
+export interface ScopedSecretResolverOptions {
+    // (undocumented)
+    readonly approve: (sinkKey: string) => void;
+    // (undocumented)
+    readonly audit?: (attempt: SecretResolutionAudit) => void;
+    // (undocumented)
+    readonly authorized: Authorized;
+    // (undocumented)
+    readonly bindings: readonly SinkBinding[];
+    // (undocumented)
+    readonly currentState: () => ResolverSessionState;
+    // (undocumented)
+    readonly envelope: CapabilityEnvelope;
+    // (undocumented)
+    readonly lookup: ExecutorSecretLookup;
+    // (undocumented)
+    readonly restrictedMode?: "keep_approved_sinks" | "deny_all";
+    // (undocumented)
+    readonly wasApproved: (sinkKey: string) => boolean;
+}
+
+// @public
 export interface SecretBindingDecl {
     // (undocumented)
     readonly fieldTypes: readonly string[];
+    // (undocumented)
+    readonly formAction?: string;
     // (undocumented)
     readonly kind: SecretHandleKind;
     // (undocumented)
     readonly name: string;
     // (undocumented)
     readonly origins: readonly string[];
+    // (undocumented)
+    readonly selector?: string;
 }
 
 // @public
@@ -1605,9 +1896,24 @@ export interface SecretHandle {
 export type SecretHandleKind = (typeof HANDLE_KINDS)[number];
 
 // @public
+export function secretRedactionForms(value: string): readonly string[];
+
+// @public
+export interface SecretResolutionAudit {
+    // (undocumented)
+    readonly handleFingerprint: string;
+    // (undocumented)
+    readonly outcome: "allowed" | "denied" | "unavailable";
+    // (undocumented)
+    readonly reason?: ReasonCode;
+    // (undocumented)
+    readonly sinkFingerprint: string;
+}
+
+// @public
 export interface SecretResolver {
     // (undocumented)
-    resolveForSink(handle: SecretHandle, target: SinkTarget, state: ResolverSessionState): Promise<string | null>;
+    resolveForSink(handle: SecretHandle, target: SinkTarget): Promise<string | null>;
 }
 
 // @public
@@ -1664,6 +1970,7 @@ export interface SecurityScanner {
     readonly phases: readonly SecurityPhase[];
     // (undocumented)
     readonly priority?: number;
+    readonly required?: boolean;
     // (undocumented)
     scan(ctx: SecurityContext): Promise<ScanResult>;
     // (undocumented)
@@ -1677,7 +1984,9 @@ export class SecuritySession {
     constructor(init: SecuritySessionInit);
     applyRiskSignal(signal: RiskSignal): void;
     authorize(action: CanonicalAction): Promise<SessionDecision>;
+    authorizeActions(actions: readonly CanonicalAction[], options?: TrustedInstructionOptions): Promise<readonly SessionDecision[]>;
     authorizeBound(action: CanonicalAction, intent: ActionIntent): Promise<BoundAuthorizationResult>;
+    classifyWithGuard(request: GuardClassificationRequest, execution: SessionGuardExecution): Promise<GuardProviderOutcome>;
     end(): Promise<TraceDocument>;
     // (undocumented)
     readonly envelope: CapabilityEnvelope;
@@ -1687,8 +1996,9 @@ export class SecuritySession {
     get guardProvider(): GuardModelProvider | undefined;
     // (undocumented)
     readonly id: string;
-    inspectUntrustedText(content: string, maxBytes?: number): Promise<UntrustedContent>;
+    inspectUntrustedText(content: string, maxBytes?: number, provenance?: DataProvenance): Promise<UntrustedContent>;
     observe(): Promise<PerceptionResult>;
+    observeForAuthorization(): Promise<PerceptionResult>;
     // (undocumented)
     on<K extends keyof SessionEvents>(type: K, listener: (event: SessionEvents[K]) => void): () => void;
     // (undocumented)
@@ -1701,6 +2011,7 @@ export class SecuritySession {
     }[]): SessionDecision;
     recordPostAction(type: CanonicalAction["type"], metadata: Readonly<Record<string, unknown>>): void;
     recordRevalidation(reason: ReasonCode, intentId: string): void;
+    registerSecret(name: string, value: string, kind?: SecretHandle["kind"]): Promise<SecretHandle>;
     releaseQuarantine(): boolean;
     requestApproval(action: CanonicalAction, findings: readonly Finding[]): Promise<ApprovalDecision>;
     reserveBudget(uses: readonly BudgetUse[]): boolean;
@@ -1710,6 +2021,7 @@ export class SecuritySession {
     get riskState(): RiskState;
     // (undocumented)
     get sessionRisk(): SessionRisk;
+    get sessionTaintFloor(): DataProvenance | undefined;
     setRisk(state: RiskState, score: number, signal?: RiskSignal): void;
     // (undocumented)
     get unsafe(): {
@@ -1744,7 +2056,17 @@ export interface SecuritySessionInit {
     // (undocumented)
     readonly trace: TraceWriter;
     // (undocumented)
-    readonly vault?: VaultAdapter;
+    readonly vault?: SessionVault;
+}
+
+// @public (undocumented)
+export interface SemanticTierSlot {
+    // (undocumented)
+    readonly constraints: GuardExecutionConstraints;
+    // (undocumented)
+    readonly provider: GuardModelProvider;
+    // (undocumented)
+    readonly required?: boolean;
 }
 
 // @public (undocumented)
@@ -1802,11 +2124,41 @@ export interface SessionEvents {
 }
 
 // @public
+export type SessionGuardClassifier = (request: GuardClassificationRequest, execution: SessionGuardExecution) => Promise<GuardProviderOutcome>;
+
+// @public
+export interface SessionGuardExecution {
+    // (undocumented)
+    readonly deadline: number;
+    // (undocumented)
+    readonly maxInputBytes?: number;
+    // (undocumented)
+    readonly maxOutputBytes?: number;
+    // (undocumented)
+    readonly maxTokens?: number;
+    // (undocumented)
+    readonly signal: AbortSignal;
+}
+
+// @public
+export type SessionGuardScannerFactory = (classify: SessionGuardClassifier) => SecurityScanner;
+
+// @public
 export interface SessionRisk {
     // (undocumented)
     readonly score: number;
     // (undocumented)
     readonly state: RiskState;
+}
+
+// @public
+export interface SessionVault {
+    // (undocumented)
+    createExecutorLookup(): ExecutorSecretLookup;
+    // (undocumented)
+    invalidateSession(): Promise<void>;
+    // (undocumented)
+    store(name: string, value: string, kind?: SecretHandle["kind"]): Promise<SecretHandle>;
 }
 
 // @public (undocumented)
@@ -1828,6 +2180,10 @@ export interface SinkBinding {
     // (undocumented)
     readonly formAction?: string;
     // (undocumented)
+    readonly kind: "SECRET" | "PII" | "CREDENTIAL";
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
     readonly origins: readonly string[];
     // (undocumented)
     readonly selector?: string;
@@ -1838,7 +2194,11 @@ export interface SinkTarget {
     // (undocumented)
     readonly fieldType: string;
     // (undocumented)
+    readonly formAction?: string;
+    // (undocumented)
     readonly origin: string;
+    // (undocumented)
+    readonly selector?: string;
 }
 
 // @public
@@ -1906,10 +2266,13 @@ export interface TaskContract {
 export const TIER_KINDS: Readonly<Record<DetectorTier, "deterministic" | "semantic">>;
 
 // @public (undocumented)
-export const TRACE_EVENT_KINDS: readonly ["session_start", "observation", "finding", "scan_result", "proposed_action", "canonical_action", "policy_decision", "approval_request", "approval_decision", "execution", "post_action", "risk_change", "budget_event", "escape_hatch", "network_mutation", "adapter_event", "authorized_action", "action_revalidation", "session_end"];
+export type TierSkipReason = "not_configured" | "deterministic_critical" | "required_tier_failed" | "cancelled";
 
 // @public (undocumented)
-export const TRACE_SCHEMA_VERSION = "1.0.0";
+export const TRACE_EVENT_KINDS: readonly ["session_start", "observation", "taint_activation", "trusted_instruction_claim", "finding", "scan_result", "proposed_action", "canonical_action", "policy_decision", "approval_request", "approval_decision", "execution", "post_action", "risk_change", "budget_event", "escape_hatch", "network_mutation", "adapter_event", "authorized_action", "action_revalidation", "secret_resolution", "egress_inspection", "session_end"];
+
+// @public (undocumented)
+export const TRACE_SCHEMA_VERSION = "1.4.0";
 
 // @public (undocumented)
 export interface TraceDocument {
@@ -1964,6 +2327,12 @@ export const TRUST_LEVELS: readonly ["user", "application", "web", "tool", "memo
 
 // @public
 export const TRUST_ORDER: readonly TrustLevel[];
+
+// @public
+export interface TrustedInstructionOptions {
+    // (undocumented)
+    readonly instructedBy?: "user";
+}
 
 // @public (undocumented)
 export type TrustedIntent = TrustedIntentContext & {
@@ -2041,6 +2410,9 @@ export interface UntrustedContentInput {
 export function validateActionIntent(input: unknown): ActionIntent | null;
 
 // @public
+export function validateDataProvenance(value: unknown): DataProvenance | null;
+
+// @public
 export type ValidatedPolicyRuntimeState = PolicyRuntimeState & {
     readonly [VALIDATED_POLICY_RUNTIME_STATE]: true;
 };
@@ -2098,11 +2470,7 @@ export type ValidationResult = {
 // @public
 export interface VaultAdapter {
     // (undocumented)
-    invalidateSession(): Promise<void>;
-    // (undocumented)
-    lookup(handle: SecretHandle): Promise<string | null>;
-    // (undocumented)
-    store(name: string, value: string): Promise<SecretHandle>;
+    openSession(sessionId: string): SessionVault;
 }
 
 // @public (undocumented)

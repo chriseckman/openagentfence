@@ -55,6 +55,30 @@ normalized decimal/octal/hex IPv4 forms, and mapped IPv6 forms) are denied by
 default. An application contract can request private-network access, but a
 policy `block_private_networks: true` or an internal range still overrides it.
 
+Browser network effects are evaluated independently from action authorization.
+For the opt-in Playwright route boundary, initial navigation and fetch/XHR must
+pass actual-origin, destination, private/internal-network, risk, and DLP checks
+before continuation. ActionIntent correlation is evidence only. Redirect
+follow-ups, forms, beacons, headers as an independent surface, WebSockets,
+workers/service workers, uploads/downloads, popups, WebMCP, and Stagehand
+traffic retain the adapter's exact `observed_only` or `unavailable` status;
+policy cannot promote a missing framework hook into enforcement.
+
+## Secret resolution
+
+Task-contract secret bindings are trusted application data. Each names the
+handle kind and exact canonical origins/field types; an optional selector and
+form-action URL narrow the sink further. Core resolves only a handle present in
+the exact, revalidated authorized operation, and only inside its one-shot
+executor scope. Handles in unbound URLs, messages, files, memory, or other
+sinks remain inert.
+
+`secrets.restricted_mode` defaults to `keep_approved_sinks`: after the session
+becomes RESTRICTED, only an exact sink that completed successfully while NORMAL
+can be reused. `deny_all` disables even those sinks. READ_ONLY and QUARANTINED
+always deny resolution. This setting can narrow resolution but cannot create a
+binding, add an origin, bypass the credential capability, or expose a value.
+
 ## Runtime facts, thresholds, and suppressions
 
 ADR-0013 supplies the engine with an immutable, firewall-owned runtime summary:

@@ -80,6 +80,11 @@
         "resolution": {
           "const": "executor_only",
           "description": "Secret values resolve only in a bound executor sink."
+        },
+        "restricted_mode": {
+          "enum": ["keep_approved_sinks", "deny_all"],
+          "default": "keep_approved_sinks",
+          "description": "Whether RESTRICTED sessions may reuse exact sinks established while NORMAL."
         }
       }
     },
@@ -108,6 +113,23 @@
         "additionalProperties": false,
         "properties": {
           "enabled": { "type": "boolean" },
+          "patterns": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "prefix", "alphabet", "min_length", "max_length"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9_.-]{1,64}$" },
+                "prefix": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}$" },
+                "alphabet": { "enum": ["alphanumeric", "base64url", "hex"] },
+                "min_length": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "max_length": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "kind": { "enum": ["SECRET", "PII", "CREDENTIAL"] }
+              }
+            }
+          },
           "rules": {
             "type": "object",
             "additionalProperties": {

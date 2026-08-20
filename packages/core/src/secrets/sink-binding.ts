@@ -4,6 +4,8 @@
  * `SecretResolver`; a vault implementation cannot weaken this.
  */
 export interface SinkBinding {
+  readonly name: string;
+  readonly kind: "SECRET" | "PII" | "CREDENTIAL";
   readonly origins: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly selector?: string;
@@ -14,4 +16,6 @@ export interface SinkBinding {
 export interface SinkTarget {
   readonly origin: string;
   readonly fieldType: string;
+  readonly selector?: string;
+  readonly formAction?: string;
 }

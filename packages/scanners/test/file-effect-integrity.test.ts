@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CanonicalAction } from "@openagentfence/core";
+import { provenanced, type CanonicalAction } from "@openagentfence/core";
 import { createFileEffectIntegrityScanner } from "../src/index.js";
 import { probe, scannerContext } from "./helpers.js";
 
@@ -18,13 +18,16 @@ describe("file-effect integrity scanner (OAF-SEC-004)", () => {
     const malformed: readonly CanonicalAction[] = [
       {
         type: "SUBMIT",
-        data: { method: "post" },
+        data: provenanced({ method: "post" }, { trust: "application" }),
         instructionProvenance: { trust: "application" },
       },
       {
         type: "UPLOAD",
         destination: "https://upload.example/receive",
-        data: { files: [{ name: "C:\\private.txt", bytes: 1 }], taskNecessary: true },
+        data: provenanced(
+          { files: [{ name: "C:\\private.txt", bytes: 1 }], taskNecessary: true },
+          { trust: "application" },
+        ),
         instructionProvenance: { trust: "application" },
       },
       { type: "DOWNLOAD", instructionProvenance: { trust: "application" } },
@@ -41,12 +44,15 @@ describe("file-effect integrity scanner (OAF-SEC-004)", () => {
       proposed({
         type: "UPLOAD",
         destination: "https://upload.example/receive",
-        data: {
-          files: [{ name: "note.txt", bytes: 12, mimeType: "text/plain" }],
-          provenance: { trust: "application" },
-          sensitivity: "public",
-          taskNecessary: true,
-        },
+        data: provenanced(
+          {
+            files: [{ name: "note.txt", bytes: 12, mimeType: "text/plain" }],
+            provenance: { trust: "application" },
+            sensitivity: "public",
+            taskNecessary: true,
+          },
+          { trust: "application" },
+        ),
         instructionProvenance: { trust: "application" },
       }),
     );

@@ -1,5 +1,6 @@
-import { RedactionRegistry } from "../src/index.js";
+import { DEFAULT_NETWORK_CAPABILITIES, RedactionRegistry } from "../src/index.js";
 import { secureDefaultEnvelope } from "../src/index.js";
+import { provenanced } from "../src/index.js";
 import type {
   ActionType,
   CanonicalAction,
@@ -16,9 +17,15 @@ export const redactor = new RedactionRegistry();
 
 export function mkAction(
   type: ActionType,
-  overrides: Partial<CanonicalAction> = {},
+  overrides: Omit<Partial<CanonicalAction>, "data"> & { readonly data?: unknown } = {},
 ): CanonicalAction {
-  return { type, instructionProvenance: { trust: "application" }, ...overrides };
+  const { data, ...rest } = overrides;
+  return {
+    type,
+    instructionProvenance: { trust: "application" },
+    ...(data !== undefined ? { data: provenanced(data, { trust: "application" }) } : {}),
+    ...rest,
+  };
 }
 
 export function mkFinding(id: string, category: string, overrides: Partial<Finding> = {}): Finding {
@@ -76,6 +83,7 @@ export function fakeAdapter(overrides: Partial<BrowserAdapter> = {}): BrowserAda
   return {
     capabilities: {
       route: false,
+      network: DEFAULT_NETWORK_CAPABILITIES,
       navigationEvents: true,
       downloadEvents: true,
       popupEvents: true,

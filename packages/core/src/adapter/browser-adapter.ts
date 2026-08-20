@@ -4,6 +4,8 @@ import type { Authorized } from "../action/authorized.js";
 import type { SecretResolver } from "../secrets/resolver.js";
 import type { NetworkMutation } from "../network/mutation.js";
 import type { NetworkGuardDecision } from "../network/decision.js";
+import type { EgressInspection } from "../egress/inspect.js";
+import type { EgressPayload } from "../egress/payload.js";
 
 export interface AdapterEventSink {
   onNavigation(event: AdapterEvent): void;
@@ -11,8 +13,13 @@ export interface AdapterEventSink {
   onPopup(event: AdapterEvent): boolean;
   onDownload(event: AdapterEvent): void;
   onNetworkMutation?(mutation: NetworkMutation): void;
+  /** Ephemeral pre-effect DLP check. Implementations must never retain `payload.value`. */
+  onEgressPayload?(payload: EgressPayload, signal?: AbortSignal): EgressInspection;
   /** Synchronous firewall decision used only by adapters with an active request-abort hook. */
-  onRouteRequest?(mutation: NetworkMutation): NetworkGuardDecision;
+  onRouteRequest?(
+    mutation: NetworkMutation,
+    egressInspection?: EgressInspection,
+  ): NetworkGuardDecision;
 }
 
 export interface AdapterEvent {

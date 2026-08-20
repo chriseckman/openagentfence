@@ -1,5 +1,6 @@
 import type { NetworkInitiator } from "./initiator.js";
 import type { EnforcementLevel, NetworkSurface } from "./capabilities.js";
+import type { DataProvenance } from "../contracts/provenance.js";
 
 /**
  * Bounded, redacted request metadata (OAF-CORE-017, INV-05/16). Headers carry
@@ -26,6 +27,8 @@ export interface NetworkMutation {
   readonly frameOrigin?: string;
   readonly destination: string;
   readonly enforcement: EnforcementLevel;
+  /** Required factual source metadata for this browser/tool network effect. */
+  readonly provenance: DataProvenance;
   readonly metadata?: NetworkRequestMetadata;
   readonly actionIntentId?: string;
   /** Number of preceding redirect hops in this request chain, when observable. */

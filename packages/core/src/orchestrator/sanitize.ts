@@ -4,8 +4,11 @@
  * Span-level sanitizations are applied sequentially in scanner priority order,
  * each later transformation operating on the already-sanitized text; where
  * spans overlap, the most restrictive wins (removal beats replacement).
- * Provenance is preserved by the caller (sanitization never adds trust).
+ * Provenance is attached to each span at the scanner boundary; sanitization
+ * never adds or upgrades trust.
  */
+
+import type { DataProvenance, ProvenancedDatum } from "../contracts/provenance.js";
 
 export interface SanitizationSpan {
   /** Inclusive start offset in the original text. */
@@ -14,6 +17,8 @@ export interface SanitizationSpan {
   readonly end: number;
   /** Replacement text; the empty string is a removal (most restrictive). */
   readonly replacement: string;
+  /** Source retained through the transformation; required at TB9. */
+  readonly provenance: DataProvenance;
 }
 
 /**
@@ -70,10 +75,39 @@ export function applySanitizationSpans(base: string, spans: readonly Sanitizatio
 }
 
 /** Whole-text sanitization: later output operates on prior sanitized text. */
-export function applySanitizations(base: string, sanitized: readonly string[]): string {
+export function applySanitizations(
+  base: string,
+  sanitized: readonly ProvenancedDatum<string>[],
+): string {
   let current = base;
   for (const next of sanitized) {
-    current = next;
+    current = next.value;
+  }
+  return current;
+}
+
+/**
+ * Compose whole-text and span sanitizers without allowing a whole-text result
+ * from one scanner to restore a value removed by another scanner. Whole-text
+ * results are independent canonical views, so their offsets cannot safely be
+ * reused; exact source slices are therefore re-applied to the final view.
+ */
+export function applySanitizationPipeline(
+  base: string,
+  spans: readonly SanitizationSpan[],
+  sanitized: readonly ProvenancedDatum<string>[],
+): string {
+  if (sanitized.length === 0) return applySanitizationSpans(base, spans);
+
+  let current = applySanitizations(base, sanitized);
+  const ordered = [...spans].sort(
+    (a, b) => Number(b.replacement === "") - Number(a.replacement === "") || a.start - b.start,
+  );
+  for (const span of ordered) {
+    const start = Math.min(Math.max(span.start, 0), base.length);
+    const end = Math.min(Math.max(span.end, start), base.length);
+    const source = base.slice(start, end);
+    if (source.length > 0) current = current.split(source).join(span.replacement);
   }
   return current;
 }

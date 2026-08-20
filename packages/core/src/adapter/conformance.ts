@@ -1,4 +1,5 @@
 import { validateProbeResult } from "../probe/validate.js";
+import { validateNetworkCapabilities } from "../network/validate.js";
 import type { BrowserAdapter } from "./browser-adapter.js";
 import type { PageObservation } from "./observation.js";
 
@@ -95,6 +96,10 @@ export async function runAdapterConformance(
       ok: isRecord(caps) && typeof caps[flag] === "boolean",
     });
   }
+  checks.push({
+    name: "capabilities.network",
+    ok: isRecord(caps) && validateNetworkCapabilities(caps["network"]) !== null,
+  });
 
   try {
     const observation = await adapter.observe();

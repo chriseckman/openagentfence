@@ -7,7 +7,6 @@ import type {
   SecurityContext,
   Severity,
 } from "@openagentfence/core";
-import type { Redactor } from "@openagentfence/core";
 
 /** Extract the probe result from a PERCEPTION observation context, if any. */
 export function getProbe(ctx: SecurityContext): ProbeResult | null {
@@ -31,14 +30,16 @@ export interface FindingSpec {
   readonly selector?: string;
   readonly origin?: string;
   readonly frameOrigin?: string;
+  /** Original observation/action source; scanner output cannot invent trust. */
+  readonly provenance?: DataProvenance;
   readonly evidence: string;
   readonly recommendedAction: ScannerVerdict;
   readonly severity?: Severity;
   readonly confidence?: number;
 }
 
-/** Build a redacted finding with web provenance. Raw evidence text is redacted. */
-export function makeFinding(redactor: Redactor, spec: FindingSpec): Finding {
+/** Build a redacted finding without losing the security-context source. */
+export function makeFinding(ctx: SecurityContext, spec: FindingSpec): Finding {
   const source: FindingSource = {
     type: spec.sourceType,
     ...(spec.selector !== undefined ? { selector: spec.selector } : {}),
@@ -46,9 +47,10 @@ export function makeFinding(redactor: Redactor, spec: FindingSpec): Finding {
     ...(spec.frameOrigin !== undefined ? { frameOrigin: spec.frameOrigin } : {}),
   };
   const provenance: DataProvenance = {
-    trust: "web",
+    ...(spec.provenance ?? ctx.provenance),
     ...(spec.origin !== undefined ? { origin: spec.origin } : {}),
     ...(spec.frameOrigin !== undefined ? { frameOrigin: spec.frameOrigin } : {}),
+    ...(spec.selector !== undefined ? { elementId: spec.selector } : {}),
   };
   return {
     id: spec.id,
@@ -57,7 +59,7 @@ export function makeFinding(redactor: Redactor, spec: FindingSpec): Finding {
     description: spec.description,
     source,
     provenance,
-    evidence: redactor.redact(spec.evidence),
+    evidence: ctx.redactor.redact(spec.evidence),
     recommendedAction: spec.recommendedAction,
     ...(spec.severity !== undefined ? { severity: spec.severity } : {}),
     ...(spec.confidence !== undefined ? { confidence: spec.confidence } : {}),

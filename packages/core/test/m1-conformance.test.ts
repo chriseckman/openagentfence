@@ -225,6 +225,7 @@ describe("M1 conformance gate", () => {
         initiator: "unknown",
         destination: "https://evil.example",
         enforcement: "observed_only",
+        provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
       }),
     ).not.toBeNull();
   });

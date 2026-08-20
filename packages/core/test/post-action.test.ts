@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   comparePostAction,
+  DEFAULT_NETWORK_CAPABILITIES,
   OpenAgentFence,
   postActionCapabilitiesAvailable,
   type AdapterEventSink,
@@ -13,6 +14,7 @@ function eventAdapter(
   emit: (sink: AdapterEventSink, sessionId: string) => void,
   capabilities: BrowserAdapter["capabilities"] = {
     route: false,
+    network: DEFAULT_NETWORK_CAPABILITIES,
     navigationEvents: true,
     downloadEvents: true,
     popupEvents: true,
@@ -107,6 +109,7 @@ describe("deterministic POST_ACTION observation", () => {
     expect(
       postActionCapabilitiesAvailable({
         route: false,
+        network: DEFAULT_NETWORK_CAPABILITIES,
         navigationEvents: true,
         downloadEvents: true,
         popupEvents: false,
@@ -174,6 +177,7 @@ describe("deterministic POST_ACTION observation", () => {
   it("restricts subsequent authority instead of reporting a clean result when observation is unavailable", async () => {
     const adapter = eventAdapter(() => undefined, {
       route: false,
+      network: DEFAULT_NETWORK_CAPABILITIES,
       navigationEvents: false,
       downloadEvents: false,
       popupEvents: false,

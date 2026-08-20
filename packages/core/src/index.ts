@@ -2,8 +2,15 @@
 export { SECURITY_PHASES, isSecurityPhase } from "./contracts/phase.js";
 export type { SecurityPhase } from "./contracts/phase.js";
 
-export { TRUST_LEVELS, TRUST_ORDER, WEB_PROVENANCE, leastTrust } from "./contracts/provenance.js";
-export type { DataProvenance, TrustLevel } from "./contracts/provenance.js";
+export {
+  TRUST_LEVELS,
+  TRUST_ORDER,
+  WEB_PROVENANCE,
+  leastTrust,
+  provenanced,
+  validateDataProvenance,
+} from "./contracts/provenance.js";
+export type { DataProvenance, ProvenancedDatum, TrustLevel } from "./contracts/provenance.js";
 
 export { SCANNER_VERDICTS, AGGREGATE_VERDICTS, SCANNER_TO_AGGREGATE } from "./contracts/verdict.js";
 export type { ScannerVerdict, AggregateVerdict } from "./contracts/verdict.js";
@@ -105,9 +112,37 @@ export {
 } from "./secrets/handle-codec.js";
 export type { SecretHandleKind, SecretHandle } from "./secrets/handle-codec.js";
 export type { SinkBinding, SinkTarget } from "./secrets/sink-binding.js";
-export type { VaultAdapter } from "./secrets/vault-adapter.js";
-export { denyAllResolver } from "./secrets/resolver.js";
-export type { SecretResolver, ResolverSessionState } from "./secrets/resolver.js";
+export { inferSecretFieldType } from "./secrets/field-type.js";
+export type { VaultAdapter, SessionVault, ExecutorSecretLookup } from "./secrets/vault-adapter.js";
+export { createScopedSecretResolver, denyAllResolver } from "./secrets/resolver.js";
+export type {
+  SecretResolver,
+  ScopedSecretResolver,
+  ScopedSecretResolverOptions,
+  ResolverSessionState,
+  SecretResolutionAudit,
+} from "./secrets/resolver.js";
+
+// Egress
+export { EGRESS_SINKS } from "./egress/payload.js";
+export type { EgressPayload, EgressSink } from "./egress/payload.js";
+export { MAX_EGRESS_VALUE_BYTES, egressMatchForms } from "./egress/match.js";
+export { createEgressInspector } from "./egress/inspect.js";
+export { actionEgressPayloads } from "./egress/action.js";
+export {
+  EXFILTRATION_ACTION_TYPES,
+  evaluateCrossOriginExfiltration,
+} from "./egress/exfiltration.js";
+export type {
+  CrossOriginExfiltrationEvaluation,
+  CrossOriginExfiltrationFacts,
+} from "./egress/exfiltration.js";
+export type {
+  EgressInspector,
+  EgressInspectorOptions,
+  EgressInspection,
+  EgressMatchResult,
+} from "./egress/inspect.js";
 
 // Envelope
 export {
@@ -166,10 +201,19 @@ export { defineScanner } from "./scanner/define-scanner.js";
 // Orchestrator
 export { ScannerRegistry } from "./orchestrator/registry.js";
 export { runPhase } from "./orchestrator/run-phase.js";
-export type { RunPhaseResult, ScanFailureKind, ScannerFailure } from "./orchestrator/run-phase.js";
+export type {
+  RunPhaseResult,
+  ScanFailureKind,
+  ScannerFailure,
+  PhaseTierMetric,
+} from "./orchestrator/run-phase.js";
 export { runWithDeadline } from "./orchestrator/timeouts.js";
 export type { DeadlineResult, DeadlineFailureKind } from "./orchestrator/timeouts.js";
-export { applySanitizations, applySanitizationSpans } from "./orchestrator/sanitize.js";
+export {
+  applySanitizationPipeline,
+  applySanitizations,
+  applySanitizationSpans,
+} from "./orchestrator/sanitize.js";
 export type { SanitizationSpan } from "./orchestrator/sanitize.js";
 export { DEFAULT_RESOURCE_LIMITS } from "./orchestrator/limits.js";
 export type { ResourceLimits } from "./orchestrator/limits.js";
@@ -184,7 +228,7 @@ export type {
 } from "./trace/events.js";
 export { TraceWriter, redactDeep } from "./trace/writer.js";
 export type { TraceSink } from "./trace/writer.js";
-export { RedactionRegistry, hash } from "./trace/redact.js";
+export { RedactionRegistry, hash, secretRedactionForms } from "./trace/redact.js";
 export type { RedactedEvidence, Redactor } from "./trace/redact.js";
 export {
   validateTraceEvent,
@@ -214,8 +258,22 @@ export type { GuardClassificationRequest, GuardBudget } from "./guard/request.js
 export type { GuardModelProvider } from "./guard/provider.js";
 export { DETECTOR_TIERS, TIER_KINDS, kindForTier, defaultTierForKind } from "./guard/tier.js";
 export type { DetectorTier } from "./guard/tier.js";
-export { runGuardProvider, DEFAULT_GUARD_EXECUTION_LIMITS } from "./guard/execution.js";
+export { runDetectorRouter } from "./guard/router.js";
 export type {
+  DetectorRouterInput,
+  DetectorRouterResult,
+  DetectorTierMetric,
+  SemanticTierSlot,
+  TierSkipReason,
+} from "./guard/router.js";
+export {
+  runGuardProvider,
+  guardTokenReservation,
+  GuardProviderRuntimeError,
+  DEFAULT_GUARD_EXECUTION_LIMITS,
+} from "./guard/execution.js";
+export type {
+  GuardDispatchReservation,
   GuardExecutionConstraints,
   GuardProviderFailureKind,
   GuardProviderOutcome,
@@ -254,6 +312,13 @@ export type { NetworkMutation, NetworkRequestMetadata } from "./network/mutation
 export { NETWORK_VERDICTS } from "./network/decision.js";
 export type { NetworkVerdict, NetworkGuardDecision } from "./network/decision.js";
 export type { NetworkGuardInput, NetworkGuard } from "./network/guard.js";
+export { evaluateNetworkMutation } from "./network/evaluate.js";
+export type { NetworkMutationEvaluationInput } from "./network/evaluate.js";
+export { correlateNetworkMutation } from "./network/correlate.js";
+export type {
+  NetworkIntentCorrelation,
+  NetworkIntentCorrelationStatus,
+} from "./network/correlate.js";
 export { validateNetworkMutation, validateNetworkCapabilities } from "./network/validate.js";
 
 // Probe
@@ -277,6 +342,10 @@ export type {
   PerceptionResult,
   BoundAuthorizationResult,
   ExactActionExecutor,
+  SessionGuardExecution,
+  SessionGuardClassifier,
+  SessionGuardScannerFactory,
+  TrustedInstructionOptions,
 } from "./session/session.js";
 export { OpenAgentFence } from "./session/facade.js";
 export type { OpenAgentFenceOptions } from "./session/facade.js";

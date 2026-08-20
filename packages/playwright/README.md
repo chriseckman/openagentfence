@@ -9,6 +9,8 @@ Playwright; all Playwright-specific behavior stays in this package (ADR-0002).
   opaque page/context/frame identities and revisions, a core probe, ARIA
   snapshot, and opt-in bounded PNG screenshots. A frame whose probe cannot be
   read is retained with `embedded: true` rather than silently omitted.
+  Browser observations, scanner findings, and normalized request mutations
+  retain web provenance plus available origin/frame/page/element/time metadata.
 - Event subscriptions receive a firewall-owned session identity and detach at
   session end. Navigation, popup, and download events retain opaque page/frame
   identity; request events normalize validated `NetworkMutation` records.
@@ -28,6 +30,11 @@ Playwright; all Playwright-specific behavior stays in this package (ADR-0002).
   immediately before exact execution, and fails closed on mutation or expiry.
   Other execution paths are absent from the secure surface; raw page access
   remains the recorded escape hatch.
+
+  Action data is a `ProvenancedDatum`: application-owned instruction data stays
+  application-labelled, while form metadata or other DOM-derived components
+  make the enclosing datum web-labelled. Upload declarations preserve the
+  supplied user/application file source separately for deterministic checks.
 
   After exact execution, the session holds a bounded 25 ms POST_ACTION event
   window and compares top-level navigation, popup, and download events with
@@ -58,12 +65,31 @@ outside the session envelope before the target receives a request. The local
 integration suite asserts zero captured target requests for a blocked SSRF
 fetch and cross-origin initial navigation.
 
+Before continuation, the same request passes core's independent Network
+Mutation Guard over its actual origin, destination, provenance, current risk,
+and DLP result. Exact wrapper execution can attach a live `ActionIntent`
+correlation, but that value is trace evidence only and never bypasses those
+checks. The adapter instance exposes the complete matrix at
+`adapter.capabilities.network` for doctor/session-start reporting.
+
+The same measured hook performs bounded D-11 egress inspection over URL query,
+header values, and textual request bodies before continuation. Registered raw,
+trim/case, URL-encoded, and standard-Base64 values are aborted unless the exact
+destination and sink are trusted-contract bindings; overflow, cancellation, or
+an unavailable inspector also abort. Network events retain only bounded header
+metadata plus body size/hash and never the inspected body.
+
 Playwright invokes routing only for the first URL of a redirect chain. Later
 redirect hops are therefore **`observed_only`**, not enforced; their origin and
 hop metadata are recorded for the core redirect evaluator, but a follow-up hop
-may already have reached its target. Form/beacon/upload initiator attribution,
-headers/body enforcement, WebSocket frames, service workers, downloads,
-popups, and WebMCP remain explicit observed-only or unavailable gaps. A proxy
+may already have reached its target. Form submissions and empirically
+identified beacon requests are recorded as `observed_only`; ambiguous
+non-fetch resource types are never promoted to the enforced fetch row. Headers
+as an independent surface, upload attribution, WebSocket frames, workers and
+service workers, downloads, popups, and WebMCP remain explicit observed-only
+or unavailable gaps. `page.route()` does not cover a popup's initial request
+or service-worker-owned traffic, and the adapter safely handles requests for
+which Playwright exposes no frame. A proxy
 or a framework hook that intercepts every redirect hop is required before
 claiming redirect preflight blocking.
 
@@ -73,8 +99,18 @@ adapter closes the popup immediately on an exhausted budget or disallowed URL.
 This does not claim pre-navigation or zero-byte popup containment, does not
 expose a secure child-page wrapper, and leaves taint propagation to PS-013.
 
-Secret-handle-bearing Playwright operations remain disabled until executor-side
-substitution lands in OAF-DATA-004. The guarded upload path accepts only
+Secret handles are supported as a whole value for guarded `fill`, `type`, and
+`selectOption`. After exact live target revalidation, the adapter infers the
+field type from live element metadata, asks the action-scoped resolver for the
+bound origin/field/selector/form action, and passes the materialized value
+directly to that exact element call. It never mutates the authorized operation
+or returns the value. Embedded/multiple handles and handles in navigation,
+press, helper, upload, or download operations fail closed. Header/message
+substitution is unavailable because the secure wrapper exposes no exact bound
+sink for those surfaces. Framework errors after resolution are replaced with a
+stable value-free error.
+
+The guarded upload path accepts only
 in-memory application/user payloads, never secret handles or paths. Download
 metadata is obtained before it is returned to application/agent code; Playwright
 cannot abort a download response after headers, so this is a pre-exposure

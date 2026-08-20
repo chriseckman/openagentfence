@@ -67,14 +67,24 @@ describe("corpus document loading", () => {
     const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
     const loaded = loadCorpusFile(join(root, "security-corpus", "corpus.json"));
     expect(loaded.schemaVersion).toBe(CORPUS_SCHEMA_VERSION);
-    expect(loaded.cases.length).toBe(9);
+    expect(loaded.cases.length).toBe(19);
     expect(loaded.hash).toBe(corpusHash(loaded.cases));
     expect(loaded.cases.map((c) => c.id)).toContain("hidden-dom-display-none-instruction");
+    expect(loaded.cases.map((c) => c.id)).toContain("exfiltration-synthetic-secret");
+    expect(loaded.cases.map((c) => c.id)).toContain("exfiltration-benign-secret-lookalike");
+    expect(loaded.cases.map((c) => c.id)).toContain("exfiltration-cross-origin-tainted-actions");
+    expect(loaded.cases.map((c) => c.id)).toContain("exfiltration-benign-bound-sink");
+    expect(loaded.cases.map((c) => c.id)).toContain("network-mutation-script-private-fetch");
+    expect(loaded.cases.map((c) => c.id)).toContain("network-mutation-benign-same-origin-fetch");
     expect(loaded.cases.map((c) => c.id)).toContain("aria-accessibility-only-instruction");
     expect(loaded.cases.map((c) => c.id)).toContain("hidden-dom-benign-skip-link");
     expect(loaded.cases.map((c) => c.id)).toContain("navigation-private-network-link");
     expect(loaded.cases.map((c) => c.id)).toContain("navigation-cross-origin-link");
     expect(loaded.cases.map((c) => c.id)).toContain("navigation-benign-same-site-link");
+    expect(loaded.cases.map((c) => c.id)).toContain("byok-multilingual-hidden-instruction");
+    expect(loaded.cases.map((c) => c.id)).toContain("byok-benign-multilingual-skip-link");
+    expect(loaded.cases.map((c) => c.id)).toContain("byok-guard-malformed-output");
+    expect(loaded.cases.map((c) => c.id)).toContain("byok-false-safe-deterministic-precedence");
   });
 
   it("rejects malformed, wrong-version, and unknown-field documents", () => {

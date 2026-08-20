@@ -33,7 +33,7 @@ export function createUnicodeInvisibleScanner(): ReturnType<typeof defineScanner
         }
         const count = (text.match(ZERO_WIDTH_CHARS) ?? []).length;
         findings.push(
-          makeFinding(ctx.redactor, {
+          makeFinding(ctx, {
             id: `unicode:${label}`,
             category: "unicode_invisible",
             title: "Zero-width / invisible Unicode characters",

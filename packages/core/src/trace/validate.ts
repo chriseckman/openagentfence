@@ -1,5 +1,11 @@
 import { AGGREGATE_VERDICTS } from "../contracts/verdict.js";
 import { TRACE_EVENT_KINDS, TRACE_SCHEMA_VERSION } from "./events.js";
+import { validateDataProvenance } from "../contracts/provenance.js";
+import { isReasonCode } from "../policy/reasons.js";
+import { EGRESS_SINKS } from "../egress/payload.js";
+import { ENFORCEMENT_LEVELS, NETWORK_SURFACES } from "../network/capabilities.js";
+import { NETWORK_INITIATORS } from "../network/initiator.js";
+import { NETWORK_VERDICTS } from "../network/decision.js";
 
 /**
  * Runtime validation for trace documents and events (ARCHITECTURE §14,
@@ -111,6 +117,93 @@ export function validateTraceEvent(input: unknown): TraceValidationResult {
       if (typeof data["evidenceHash"] !== "string" || data["evidenceHash"].length === 0) {
         fail(errors, "finding.evidenceHash must be a non-empty string");
       }
+      if (validateDataProvenance(data["provenance"]) === null) {
+        fail(errors, "finding.provenance must be valid bounded provenance");
+      }
+      break;
+    }
+    case "observation": {
+      if (validateDataProvenance(data["provenance"]) === null) {
+        fail(errors, "observation.provenance must be valid bounded provenance");
+      }
+      break;
+    }
+    case "taint_activation": {
+      if (data["source"] !== "observation" && data["source"] !== "tool_output") {
+        fail(errors, "taint_activation.source must identify a released untrusted surface");
+      }
+      const provenance = validateDataProvenance(data["provenance"]);
+      if (provenance === null || provenance.trust !== "web") {
+        fail(errors, "taint_activation.provenance must be valid web-trust provenance");
+      }
+      break;
+    }
+    case "trusted_instruction_claim": {
+      if (data["instructedBy"] !== "user") {
+        fail(errors, "trusted_instruction_claim.instructedBy must be user");
+      }
+      if (typeof data["actionType"] !== "string" || data["actionType"].length === 0) {
+        fail(errors, "trusted_instruction_claim.actionType must be a non-empty string");
+      }
+      const provenance = validateDataProvenance(data["instructionProvenance"]);
+      if (provenance === null || provenance.trust !== "user") {
+        fail(
+          errors,
+          "trusted_instruction_claim.instructionProvenance must be valid user provenance",
+        );
+      }
+      break;
+    }
+    case "secret_resolution": {
+      if (
+        typeof data["handleFingerprint"] !== "string" ||
+        typeof data["sinkFingerprint"] !== "string"
+      ) {
+        fail(errors, "secret_resolution fingerprints must be strings");
+      }
+      if (!isIn(data["outcome"], ["allowed", "denied", "unavailable"])) {
+        fail(errors, "secret_resolution.outcome must be allowed, denied, or unavailable");
+      }
+      if (
+        data["reason"] !== undefined &&
+        (typeof data["reason"] !== "string" || !isReasonCode(data["reason"]))
+      ) {
+        fail(errors, "secret_resolution.reason must be a stable reason string");
+      }
+      break;
+    }
+    case "egress_inspection": {
+      if (!isIn(data["sink"], EGRESS_SINKS)) {
+        fail(errors, "egress_inspection.sink must be a known egress sink");
+      }
+      if (!isIn(data["verdict"], ["allow", "block"])) {
+        fail(errors, "egress_inspection.verdict must be allow or block");
+      }
+      for (const key of ["inspectedBytes", "matchCount"] as const) {
+        if (!Number.isInteger(data[key]) || (data[key] as number) < 0) {
+          fail(errors, `egress_inspection.${key} must be a non-negative integer`);
+        }
+      }
+      if (
+        data["reasons"] !== undefined &&
+        (!Array.isArray(data["reasons"]) ||
+          !data["reasons"].every((reason) => typeof reason === "string" && isReasonCode(reason)))
+      ) {
+        fail(errors, "egress_inspection.reasons must contain stable reason codes");
+      }
+      break;
+    }
+    case "proposed_action":
+    case "canonical_action": {
+      if (validateDataProvenance(data["instructionProvenance"]) === null) {
+        fail(errors, `${kind}.instructionProvenance must be valid bounded provenance`);
+      }
+      if (
+        data["dataProvenance"] !== undefined &&
+        validateDataProvenance(data["dataProvenance"]) === null
+      ) {
+        fail(errors, `${kind}.dataProvenance must be valid bounded provenance`);
+      }
       break;
     }
     case "policy_decision": {
@@ -180,8 +273,29 @@ export function validateTraceEvent(input: unknown): TraceValidationResult {
       if (typeof data["destination"] !== "string" || data["destination"].length === 0) {
         fail(errors, "network_mutation.destination must be a non-empty string");
       }
-      if (typeof data["surface"] !== "string" || typeof data["initiator"] !== "string") {
-        fail(errors, "network_mutation.surface and initiator must be strings");
+      if (
+        !isIn(data["surface"], NETWORK_SURFACES) ||
+        !isIn(data["initiator"], NETWORK_INITIATORS)
+      ) {
+        fail(errors, "network_mutation.surface and initiator must be known values");
+      }
+      if (!isIn(data["enforcement"], ENFORCEMENT_LEVELS)) {
+        fail(errors, "network_mutation.enforcement must be a known capability level");
+      }
+      if (!isIn(data["verdict"], NETWORK_VERDICTS)) {
+        fail(errors, "network_mutation.verdict must be a known guard verdict");
+      }
+      if (!isIn(data["correlation"], ["none", "matched", "mismatched", "expired"])) {
+        fail(errors, "network_mutation.correlation must be a known evidence status");
+      }
+      if (
+        !Array.isArray(data["reasons"]) ||
+        !data["reasons"].every((reason) => typeof reason === "string" && isReasonCode(reason))
+      ) {
+        fail(errors, "network_mutation.reasons must contain stable reason codes");
+      }
+      if (validateDataProvenance(data["provenance"]) === null) {
+        fail(errors, "network_mutation.provenance must be valid bounded provenance");
       }
       break;
     }

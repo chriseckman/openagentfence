@@ -41,8 +41,9 @@ describe("hidden DOM scanner", () => {
     expect(result.findings[0]?.category).toBe("hidden_dom_instruction");
     expect(result.findings[0]?.source.type).toBe("dom");
     expect(result.sanitized).toBeDefined();
-    expect(result.sanitized).not.toContain("evil.example");
-    expect(result.sanitized).toContain("benign page");
+    expect(result.sanitized?.value).not.toContain("evil.example");
+    expect(result.sanitized?.value).toContain("benign page");
+    expect(result.sanitized?.provenance.trust).toBe("web");
   });
 
   it("still strips benign hidden text without a finding", async () => {
@@ -56,7 +57,7 @@ describe("hidden DOM scanner", () => {
       ),
     );
     expect(result.findings).toEqual([]);
-    expect(result.sanitized).not.toContain("skip to content");
+    expect(result.sanitized?.value).not.toContain("skip to content");
   });
 });
 

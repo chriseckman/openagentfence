@@ -29,7 +29,7 @@ export function createCommentScanner(): ReturnType<typeof defineScanner> {
       probe.comments.forEach((comment, index) => {
         for (const match of scanInjection(comment)) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `comments:${index}:${match.ruleId}`,
               category: "comment_instruction",
               title: "Instruction-like content in HTML comment",

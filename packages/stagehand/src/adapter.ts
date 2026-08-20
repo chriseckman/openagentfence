@@ -1,11 +1,14 @@
 import {
   compareIntentState,
   DEFAULT_NETWORK_CAPABILITIES,
+  detectHandles,
   fingerprint,
   isIntentExpired,
+  provenanced,
   type ActionIntent,
   type CanonicalAction,
   type IntentStateSnapshot,
+  type ProvenancedDatum,
   type SecuritySession,
   type UntrustedContent,
 } from "@openagentfence/core";
@@ -25,6 +28,7 @@ export const STAGEHAND_SECURITY_ERROR_CODES = [
   "untrusted_output_invalid",
   "untrusted_output_oversized",
   "unsupported_file_effect",
+  "unsupported_secret_sink",
   "disabled_path",
 ] as const;
 
@@ -46,6 +50,7 @@ export type StagehandSurfaceStatus = "hooked" | "read_only" | "disabled";
 export const STAGEHAND_SURFACE_COVERAGE = Object.freeze([
   { surface: "observe", status: "read_only" },
   { surface: "act", status: "hooked" },
+  { surface: "act_secret_sink", status: "disabled" },
   { surface: "extract", status: "hooked" },
   { surface: "screenshot_first", status: "hooked" },
   { surface: "form_submission", status: "disabled" },
@@ -92,7 +97,9 @@ export function normalizeObserveResult(result: unknown): CanonicalAction {
     ...(type === "NAVIGATE" && structured.arguments?.[0] !== undefined
       ? { destination: structured.arguments[0] }
       : {}),
-    ...(structured.arguments !== undefined ? { data: structured.arguments } : {}),
+    ...(structured.arguments !== undefined
+      ? { data: provenanced(structured.arguments, { trust: "web" }) }
+      : {}),
     raw: structured,
   };
 }
@@ -230,6 +237,12 @@ export function wrapStagehand(
         "authorized candidate lacks a validated structured operation",
       );
     }
+    if (detectHandles(action).length > 0) {
+      throw new StagehandSecurityError(
+        "unsupported_secret_sink",
+        "Stagehand secret sinks are disabled because v4 act may expose arguments to model, log, result, or self-heal paths",
+      );
+    }
     const state = await options.stateResolver.snapshot(action);
     if (
       candidate.type === "SUBMIT" ||
@@ -303,17 +316,24 @@ export function wrapStagehand(
         );
       }
       try {
-        return await session.inspectUntrustedText(output, maxOutputBytes);
+        return await session.inspectUntrustedText(output, maxOutputBytes, {
+          trust: "tool",
+          timestamp: new Date().toISOString(),
+        });
       } catch (error) {
         if (error instanceof RangeError) {
-          throw new StagehandSecurityError("untrusted_output_oversized", error.message);
+          throw new StagehandSecurityError(
+            "untrusted_output_oversized",
+            "Stagehand extract output exceeds the configured security limit",
+          );
         }
         throw error;
       }
     },
     async screenshotFirstContext(): Promise<{
       readonly screenshot: unknown;
-      readonly visibleText: string;
+      /** Firewall-scanned, provenance-bearing visible context for the agent. */
+      readonly visibleText: ProvenancedDatum<string>;
     }> {
       const result = await session.observe();
       const observation = result.observation;
@@ -325,10 +345,13 @@ export function wrapStagehand(
       }
       return {
         screenshot: observation.screenshot,
-        visibleText: (observation.probe?.nodes ?? [])
-          .filter((node) => node.inViewport && !node.hidden && node.text.length > 0)
-          .map((node) => node.text)
-          .join("\n"),
+        visibleText: provenanced(
+          (observation.probe?.nodes ?? [])
+            .filter((node) => node.inViewport && !node.hidden && node.text.length > 0)
+            .map((node) => node.text)
+            .join("\n"),
+          result.sanitizedText.provenance,
+        ),
       };
     },
     disabled(surface: string): never {

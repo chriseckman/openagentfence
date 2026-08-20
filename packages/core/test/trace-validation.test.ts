@@ -44,11 +44,42 @@ describe("trace event validation", () => {
   it("accepts a well-formed event of every kind", () => {
     const cases: Array<[string, Record<string, unknown>]> = [
       ["session_start", { sessionId: "s", policyHash: "h", versions: { schema: "1.0.0" } }],
-      ["observation", { url: "https://a.example", origin: "https://a.example" }],
-      ["finding", { id: "f1", category: "c", sourceType: "dom", evidenceHash: "e" }],
+      [
+        "observation",
+        {
+          url: "https://a.example",
+          origin: "https://a.example",
+          provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
+        },
+      ],
+      [
+        "taint_activation",
+        {
+          source: "observation",
+          provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
+        },
+      ],
+      [
+        "trusted_instruction_claim",
+        {
+          instructedBy: "user",
+          actionType: "NAVIGATE",
+          instructionProvenance: { trust: "user", timestamp: "2026-01-01T00:00:00.000Z" },
+        },
+      ],
+      [
+        "finding",
+        {
+          id: "f1",
+          category: "c",
+          sourceType: "dom",
+          evidenceHash: "e",
+          provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
+        },
+      ],
       ["scan_result", { scanner: "x", failureKind: "timeout" }],
-      ["proposed_action", { type: "NAVIGATE" }],
-      ["canonical_action", { type: "NAVIGATE" }],
+      ["proposed_action", { type: "NAVIGATE", instructionProvenance: { trust: "application" } }],
+      ["canonical_action", { type: "NAVIGATE", instructionProvenance: { trust: "application" } }],
       [
         "policy_decision",
         { verdict: "BLOCK", reasons: ["destination_not_allowed"], policyHash: "h" },
@@ -60,6 +91,25 @@ describe("trace event validation", () => {
       ["risk_change", { state: "RESTRICTED", score: 40 }],
       ["budget_event", { budget: "actions", remaining: 10 }],
       ["escape_hatch", { reason: "testing" }],
+      [
+        "secret_resolution",
+        {
+          handleFingerprint: "handle-hash",
+          sinkFingerprint: "sink-hash",
+          outcome: "denied",
+          reason: "secret_sink_not_allowed",
+        },
+      ],
+      [
+        "egress_inspection",
+        {
+          sink: "routed_request_body",
+          verdict: "block",
+          inspectedBytes: 32,
+          matchCount: 1,
+          reasons: ["sensitive_value_in_egress"],
+        },
+      ],
       ["session_end", { risk: "NORMAL", score: 0 }],
     ];
     for (const [kind, data] of cases) {
@@ -73,6 +123,16 @@ describe("trace event validation", () => {
     expect(validateTraceEvent(event("bogus", {})).ok).toBe(false);
     expect(validateTraceEvent({ kind: "finding", timestamp: "", data: {} }).ok).toBe(false);
     expect(validateTraceEvent({ kind: "finding", timestamp: "t", data: "x" }).ok).toBe(false);
+    expect(
+      validateTraceEvent(
+        event("egress_inspection", {
+          sink: "unknown",
+          verdict: "allow",
+          inspectedBytes: -1,
+          matchCount: 0,
+        }),
+      ).ok,
+    ).toBe(false);
   });
 
   it("rejects session_start missing trusted metadata", () => {
@@ -85,6 +145,22 @@ describe("trace event validation", () => {
 
   it("rejects a finding without an evidence hash", () => {
     expect(validateTraceEvent(event("finding", { id: "f1" })).ok).toBe(false);
+  });
+
+  it("rejects provenance-free security trace events", () => {
+    expect(
+      validateTraceEvent(
+        event("observation", { url: "https://a.example", origin: "https://a.example" }),
+      ).ok,
+    ).toBe(false);
+    expect(validateTraceEvent(event("finding", { id: "f1", evidenceHash: "e" })).ok).toBe(false);
+    expect(validateTraceEvent(event("canonical_action", { type: "FILL" })).ok).toBe(false);
+    expect(validateTraceEvent(event("taint_activation", { source: "observation" })).ok).toBe(false);
+    expect(
+      validateTraceEvent(
+        event("trusted_instruction_claim", { instructedBy: "user", actionType: "CLICK" }),
+      ).ok,
+    ).toBe(false);
   });
 
   it("rejects policy decisions that are not explainable or carry bad evidence", () => {
@@ -116,6 +192,16 @@ describe("trace event validation", () => {
     expect(validateTraceEvent(event("approval_decision", { id: "a" })).ok).toBe(false);
     expect(validateTraceEvent(event("escape_hatch", { reason: "" })).ok).toBe(false);
     expect(validateTraceEvent(event("risk_change", { state: "" })).ok).toBe(false);
+    expect(
+      validateTraceEvent(
+        event("secret_resolution", {
+          handleFingerprint: "h",
+          sinkFingerprint: "s",
+          outcome: "denied",
+          reason: "free-form-reason",
+        }),
+      ).ok,
+    ).toBe(false);
   });
 });
 
@@ -125,12 +211,17 @@ describe("trace document validation", () => {
       schemaVersion: TRACE_SCHEMA_VERSION,
       events: [
         validStart(),
-        event("observation", { url: "https://a.example", origin: "https://a.example" }),
+        event("observation", {
+          url: "https://a.example",
+          origin: "https://a.example",
+          provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
+        }),
         event("finding", {
           id: "f1",
           category: "hidden_dom_instruction",
           sourceType: "dom",
           evidenceHash: "e",
+          provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
         }),
         event("policy_decision", {
           verdict: "BLOCK",
@@ -243,5 +334,8 @@ describe("schema agreement (trace validator vs published JSON Schema)", () => {
     expect(kinds).toContain("session_end");
     expect(kinds).toContain("policy_decision");
     expect(kinds).toContain("escape_hatch");
+    expect(kinds).toContain("taint_activation");
+    expect(kinds).toContain("trusted_instruction_claim");
+    expect(kinds).toContain("egress_inspection");
   });
 });

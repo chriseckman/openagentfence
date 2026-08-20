@@ -36,6 +36,7 @@
   "devDependencies": {
     "@openagentfence/scanners": "workspace:*",
     "@openagentfence/testing": "workspace:*",
+    "@openagentfence/vault": "workspace:*",
     "@types/node": "^22.9.0",
     "eslint": "^9.15.0",
     "playwright": "^1.48.0",

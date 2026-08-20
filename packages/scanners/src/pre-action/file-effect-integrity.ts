@@ -29,7 +29,7 @@ export function createFileEffectIntegrityScanner(): ReturnType<typeof defineScan
       }
       if (valid) return emptyResult();
       const findings: Finding[] = [
-        makeFinding(ctx.redactor, {
+        makeFinding(ctx, {
           id: `file-effect-integrity:${action.type.toLowerCase()}`,
           category: "malformed_file_effect",
           title: "Guarded browser effect lacks required bound metadata",
@@ -53,20 +53,28 @@ export function createFileEffectIntegrityScanner(): ReturnType<typeof defineScan
   });
 }
 
-function validSubmit(action: { readonly destination?: string; readonly data?: unknown }): boolean {
+function validSubmit(action: {
+  readonly destination?: string;
+  readonly data?: { readonly value: unknown };
+}): boolean {
   return (
     action.destination !== undefined &&
-    isRecord(action.data) &&
-    typeof action.data["method"] === "string"
+    action.data !== undefined &&
+    isRecord(action.data.value) &&
+    typeof action.data.value["method"] === "string"
   );
 }
 
-function validUpload(action: { readonly destination?: string; readonly data?: unknown }): boolean {
-  if (!isRecord(action.data) || action.destination === undefined) return false;
-  if (action.data["taskNecessary"] !== true || action.data["sensitivity"] === undefined)
+function validUpload(action: {
+  readonly destination?: string;
+  readonly data?: { readonly value: unknown };
+}): boolean {
+  if (action.data === undefined || !isRecord(action.data.value) || action.destination === undefined)
     return false;
-  const provenance = action.data["provenance"];
-  const files = action.data["files"];
+  const data = action.data.value;
+  if (data["taskNecessary"] !== true || data["sensitivity"] === undefined) return false;
+  const provenance = data["provenance"];
+  const files = data["files"];
   return (
     isRecord(provenance) &&
     (provenance["trust"] === "application" || provenance["trust"] === "user") &&

@@ -22,7 +22,7 @@ export function createLocalNetworkSsrfScanner(): ReturnType<typeof defineScanner
       const findings: Finding[] = [];
       if (!isSupportedNetworkScheme(destination)) {
         findings.push(
-          makeFinding(ctx.redactor, {
+          makeFinding(ctx, {
             id: "local-network-ssrf:unsupported-scheme",
             category: "unsafe_destination_scheme",
             title: "Unsupported destination scheme",
@@ -36,7 +36,7 @@ export function createLocalNetworkSsrfScanner(): ReturnType<typeof defineScanner
         );
       } else if (isPrivateNetworkDestination(destination)) {
         findings.push(
-          makeFinding(ctx.redactor, {
+          makeFinding(ctx, {
             id: "local-network-ssrf:private-destination",
             category: "private_network_destination",
             title: "Private/local destination requested",

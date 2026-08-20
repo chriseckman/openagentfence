@@ -10,6 +10,25 @@ import type { ProbeMetadata } from '@openagentfence/core';
 import type { ProbeNode } from '@openagentfence/core';
 import type { ProbeResult } from '@openagentfence/core';
 import type { SecurityScanner } from '@openagentfence/core';
+import { SessionGuardScannerFactory } from '@openagentfence/core';
+
+// @public (undocumented)
+export const BYOK_INJECTION_LIMITS: Readonly<{
+    maxExcerpts: 8;
+    maxExcerptBytes: 512;
+    maxTotalExcerptBytes: 4096;
+    maxTaskBytes: 512;
+    maxInputBytes: 5120;
+    maxOutputBytes: 4096;
+    maxTokens: 512;
+}>;
+
+// @public (undocumented)
+export interface ByokInjectionScannerOptions {
+    // (undocumented)
+    readonly localeHints?: readonly string[];
+    readonly required?: boolean;
+}
 
 // @public (undocumented)
 export interface ClassifiedNode {
@@ -48,6 +67,9 @@ export function createAriaScanner(): ReturnType<typeof defineScanner>;
 export function createAttributeScanner(): ReturnType<typeof defineScanner>;
 
 // @public
+export function createByokInjectionScannerFactory(options?: ByokInjectionScannerOptions): SessionGuardScannerFactory;
+
+// @public
 export function createCommentScanner(): ReturnType<typeof defineScanner>;
 
 // @public
@@ -67,6 +89,12 @@ export function createLocalNetworkSsrfScanner(): ReturnType<typeof defineScanner
 
 // @public
 export function createMetadataScanner(): ReturnType<typeof defineScanner>;
+
+// @public
+export function createSecretExfiltrationScanner(): ReturnType<typeof defineScanner>;
+
+// @public (undocumented)
+export function createSecretSensitiveScanner(additionalPatterns?: readonly SecretPrefixPattern[]): ReturnType<typeof defineScanner>;
 
 // @public
 export function createUnicodeInvisibleScanner(): ReturnType<typeof defineScanner>;
@@ -116,7 +144,9 @@ export function decodeUrlEncoded(input: string): string;
 export const DEFAULT_DECODE_LIMITS: DecodeLimits;
 
 // @public
-export function defaultScanners(): SecurityScanner[];
+export function defaultScanners(options?: {
+    readonly secretPatterns?: readonly SecretPrefixPattern[];
+}): SecurityScanner[];
 
 // @public
 export const ENGLISH_RULES: readonly InjectionRule[];
@@ -160,13 +190,58 @@ export function isHiddenClass(v: VisibilityClass): boolean;
 export function isVisibleClass(v: VisibilityClass): boolean;
 
 // @public
+export interface PolicySecretPrefixPattern {
+    // (undocumented)
+    readonly alphabet: "alphanumeric" | "base64url" | "hex";
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly kind?: "SECRET" | "PII" | "CREDENTIAL";
+    // (undocumented)
+    readonly max_length: number;
+    // (undocumented)
+    readonly min_length: number;
+    // (undocumented)
+    readonly prefix: string;
+}
+
+// @public
 export function scanInjection(text: string, rules?: readonly InjectionRule[]): InjectionMatch[];
+
+// @public (undocumented)
+export const SECRET_SCAN_LIMITS: Readonly<{
+    maxBytes: number;
+    maxMatches: 32;
+    maxCandidateLength: 4096;
+}>;
+
+// @public
+export function secretPatternsFromPolicy(patterns: readonly PolicySecretPrefixPattern[]): readonly SecretPrefixPattern[];
+
+// @public (undocumented)
+export interface SecretPrefixPattern {
+    // (undocumented)
+    readonly alphabet: "alphanumeric" | "base64url" | "hex";
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly kind?: "SECRET" | "PII" | "CREDENTIAL";
+    // (undocumented)
+    readonly maxLength: number;
+    // (undocumented)
+    readonly minLength: number;
+    // (undocumented)
+    readonly prefix: string;
+}
 
 // @public (undocumented)
 export function stripZeroWidth(input: string): string;
 
 // @public
 export function validateRulePack(rules: readonly InjectionRule[]): boolean;
+
+// @public
+export function validateSecretPattern(input: SecretPrefixPattern): SecretPrefixPattern;
 
 // @public (undocumented)
 export const VISIBILITY_CLASSES: readonly ["VISIBLE", "VISIBLE_LOW_CONFIDENCE", "ACCESSIBILITY_ONLY", "HIDDEN", "OFFSCREEN", "ZERO_SIZE", "CSS_GENERATED", "METADATA", "SCRIPT_OR_CODE", "EMBEDDED_FRAME", "UNKNOWN"];

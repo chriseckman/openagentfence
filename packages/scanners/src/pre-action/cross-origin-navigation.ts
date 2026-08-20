@@ -27,7 +27,7 @@ export function createCrossOriginNavigationScanner(): ReturnType<typeof defineSc
       const destinationOrigin = destinationOriginFor(destination);
       if (destinationOrigin === null || destinationOrigin === sourceOrigin) return emptyResult();
       const findings: Finding[] = [
-        makeFinding(ctx.redactor, {
+        makeFinding(ctx, {
           id: "cross-origin-navigation:destination",
           category: "cross_origin_navigation",
           title: "Cross-origin navigation requested",

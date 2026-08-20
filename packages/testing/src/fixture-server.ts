@@ -102,6 +102,9 @@ function routes(capture: (r: CapturedRequest) => void): Record<string, Route> {
     "/form": captureAndReply(
       `<!doctype html><html><body><form id="f" action="/capture" method="post"><input name="token" type="text"></form></body></html>`,
     ),
+    "/secret-form": captureAndReply(
+      `<!doctype html><html><body><form id="secret-form" action="/capture" method="post"><input id="password" name="password" type="password" autocomplete="current-password"><button id="submit" type="submit">Sign in</button></form></body></html>`,
+    ),
     "/capture": captureAndReply(`{"ok":true}`, "application/json", 200),
     "/download": captureAndReply("fixture-file-content", "application/octet-stream", 200, {
       "content-disposition": 'attachment; filename="fixture.bin"',

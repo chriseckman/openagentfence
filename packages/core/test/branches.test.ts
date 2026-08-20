@@ -57,6 +57,34 @@ describe("task contract exhaustive validation", () => {
         secrets: [{ name: "a", kind: "SECRET", origins: [], fieldTypes: "x" }],
       }).ok,
     ).toBe(false);
+    expect(
+      validateTaskContract({
+        task: "x",
+        secrets: [
+          {
+            name: "a",
+            kind: "SECRET",
+            origins: ["https://a.example/path"],
+            fieldTypes: ["password"],
+            unexpected: true,
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateTaskContract({
+        task: "x",
+        secrets: [
+          {
+            name: "a",
+            kind: "SECRET",
+            origins: ["https://a.example"],
+            fieldTypes: ["Password With Spaces"],
+            selector: "",
+          },
+        ],
+      }).ok,
+    ).toBe(false);
   });
 
   it("rejects malformed origins, budgets, and approval", () => {

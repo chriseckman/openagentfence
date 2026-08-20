@@ -37,7 +37,10 @@ export interface PolicyDocument {
       >
     >
   >;
-  readonly secrets?: { readonly resolution?: "executor_only" };
+  readonly secrets?: {
+    readonly resolution?: "executor_only";
+    readonly restricted_mode?: "keep_approved_sinks" | "deny_all";
+  };
   readonly injection?: {
     readonly high_confidence?: "restricted_mode" | "block";
     readonly critical?: "quarantine" | "block";
@@ -53,6 +56,14 @@ export interface PolicyDocument {
       string,
       {
         readonly enabled?: boolean;
+        readonly patterns?: readonly {
+          readonly id: string;
+          readonly prefix: string;
+          readonly alphabet: "alphanumeric" | "base64url" | "hex";
+          readonly min_length: number;
+          readonly max_length: number;
+          readonly kind?: "SECRET" | "PII" | "CREDENTIAL";
+        }[];
         readonly rules?: Readonly<
           Record<
             string,

@@ -4,11 +4,13 @@ import type { SecurityScanner } from "../scanner/scanner.js";
 import type { ScanResult } from "../contracts/scan-result.js";
 import type { Finding } from "../contracts/finding.js";
 import type { SanitizationSpan } from "./sanitize.js";
+import type { ProvenancedDatum } from "../contracts/provenance.js";
 import { ScannerRegistry } from "./registry.js";
 import { runWithDeadline, type DeadlineFailureKind } from "./timeouts.js";
 import { DEFAULT_RESOURCE_LIMITS, type ResourceLimits } from "./limits.js";
 import { isHighImpact } from "../action/classify.js";
 import { validateScanResult } from "../contracts/validation.js";
+import { defaultTierForKind, type DetectorTier } from "../guard/tier.js";
 
 /** The distinct failure classes an orchestrator can observe (INV-09). */
 export type ScanFailureKind = DeadlineFailureKind | "malformed" | "oversized" | "budget_exhausted";
@@ -21,9 +23,20 @@ export interface ScannerFailure {
 export interface RunPhaseResult {
   readonly results: readonly ScanResult[];
   readonly failures: readonly ScannerFailure[];
-  readonly sanitizedTexts: readonly string[];
+  readonly sanitizedTexts: readonly ProvenancedDatum<string>[];
   readonly sanitizationSpans: readonly SanitizationSpan[];
   readonly oversized: boolean;
+  readonly tierMetrics: readonly PhaseTierMetric[];
+  readonly requiredGuardChecked: boolean;
+  readonly requiredGuardFailure: boolean;
+}
+
+/** Bounded routing evidence; never contains scanner input or output. */
+export interface PhaseTierMetric {
+  readonly tier: DetectorTier;
+  readonly status: "invoked" | "skipped";
+  readonly scannerCount: number;
+  readonly skipReason?: "not_configured" | "deterministic_critical" | "cancelled";
 }
 
 interface RunOutcome {
@@ -45,8 +58,11 @@ export async function runPhase(
   limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
 ): Promise<RunPhaseResult> {
   const scanners = registry.list(phase);
-  const deterministic = scanners.filter((s) => s.kind === "deterministic");
-  const semantic = scanners.filter((s) => s.kind === "semantic");
+  const detectorTier = (scanner: SecurityScanner): DetectorTier =>
+    scanner.tier ?? defaultTierForKind(scanner.kind);
+  const deterministic = scanners.filter((s) => detectorTier(s) === "tier0");
+  const tier1 = scanners.filter((s) => detectorTier(s) === "tier1");
+  const tier2 = scanners.filter((s) => detectorTier(s) === "tier2");
 
   const phaseDeadline = Date.now() + limits.phaseDeadlineMs;
   const oversized = isOversizedObservation(ctx, limits);
@@ -54,20 +70,62 @@ export async function runPhase(
   const deterministicOutcomes = await Promise.all(
     deterministic.map((s) => runOne(s, phase, ctx, phaseDeadline)),
   );
-  const semanticOutcomes = await runConcurrent(semantic, limits.scannerConcurrency, (s) =>
-    runOne(s, phase, ctx, phaseDeadline),
+  const deterministicCritical = deterministicOutcomes.some(
+    (outcome) => outcome.result !== null && isCriticalDeterministic(outcome.result),
+  );
+  const tierMetrics: PhaseTierMetric[] = [
+    { tier: "tier0", status: "invoked", scannerCount: deterministic.length },
+  ];
+  const tier1Outcomes = deterministicCritical
+    ? []
+    : await runConcurrent(tier1, limits.scannerConcurrency, (s) =>
+        runOne(s, phase, ctx, phaseDeadline),
+      );
+  tierMetrics.push(
+    deterministicCritical
+      ? {
+          tier: "tier1",
+          status: "skipped",
+          scannerCount: tier1.length,
+          skipReason: "deterministic_critical",
+        }
+      : tier1.length === 0
+        ? { tier: "tier1", status: "skipped", scannerCount: 0, skipReason: "not_configured" }
+        : { tier: "tier1", status: "invoked", scannerCount: tier1.length },
+  );
+  const cancelled = ctx.signal.aborted || Date.now() >= phaseDeadline;
+  const tier2Outcomes =
+    deterministicCritical || cancelled
+      ? []
+      : await runConcurrent(tier2, limits.scannerConcurrency, (s) =>
+          runOne(s, phase, ctx, phaseDeadline),
+        );
+  tierMetrics.push(
+    deterministicCritical
+      ? {
+          tier: "tier2",
+          status: "skipped",
+          scannerCount: tier2.length,
+          skipReason: "deterministic_critical",
+        }
+      : cancelled
+        ? { tier: "tier2", status: "skipped", scannerCount: tier2.length, skipReason: "cancelled" }
+        : tier2.length === 0
+          ? { tier: "tier2", status: "skipped", scannerCount: 0, skipReason: "not_configured" }
+          : { tier: "tier2", status: "invoked", scannerCount: tier2.length },
   );
 
   const results: ScanResult[] = [];
   const failures: ScannerFailure[] = [];
-  const sanitizedTexts: string[] = [];
+  const sanitizedTexts: ProvenancedDatum<string>[] = [];
   const sanitizationSpans: SanitizationSpan[] = [];
+  const semanticById = new Map([...tier1, ...tier2].map((scanner) => [scanner.id, scanner]));
 
   if (oversized) {
     failures.push({ scanner: "observation", kind: "oversized" });
   }
 
-  for (const outcome of [...deterministicOutcomes, ...semanticOutcomes]) {
+  for (const outcome of [...deterministicOutcomes, ...tier1Outcomes, ...tier2Outcomes]) {
     if (outcome.result !== null) {
       results.push(outcome.result);
       if (outcome.result.sanitized !== undefined) {
@@ -82,7 +140,42 @@ export async function runPhase(
     }
   }
 
-  return { results, failures, sanitizedTexts, sanitizationSpans, oversized };
+  const semanticOutcomes = [...tier1Outcomes, ...tier2Outcomes];
+  const requiredScanners = [...tier1, ...tier2].filter((scanner) => scanner.required === true);
+  const requiredGuardChecked = requiredScanners.length > 0 && !deterministicCritical && !cancelled;
+  const requiredGuardFailure =
+    requiredGuardChecked &&
+    semanticOutcomes.some((outcome) => {
+      const scannerId = outcome.failure?.scanner ?? outcome.result?.scanner;
+      const scanner = scannerId === undefined ? undefined : semanticById.get(scannerId);
+      return (
+        scanner?.required === true &&
+        (outcome.failure !== null || outcome.result?.metadata?.["failureKind"] !== undefined)
+      );
+    });
+
+  return {
+    results,
+    failures,
+    sanitizedTexts,
+    sanitizationSpans,
+    oversized,
+    tierMetrics,
+    requiredGuardChecked,
+    requiredGuardFailure,
+  };
+}
+
+function isCriticalDeterministic(result: ScanResult): boolean {
+  return (
+    result.kind === "deterministic" &&
+    (result.verdict === "block" ||
+      result.findings.some(
+        (finding) =>
+          finding.recommendedAction === "block" &&
+          (finding.severity === "critical" || result.severity === "critical"),
+      ))
+  );
 }
 
 async function runOne(

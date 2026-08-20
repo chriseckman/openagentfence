@@ -37,6 +37,8 @@
           "enum": [
             "session_start",
             "observation",
+            "taint_activation",
+            "trusted_instruction_claim",
             "finding",
             "scan_result",
             "proposed_action",
@@ -50,8 +52,11 @@
             "budget_event",
             "escape_hatch",
             "network_mutation",
+            "adapter_event",
             "authorized_action",
             "action_revalidation",
+            "secret_resolution",
+            "egress_inspection",
             "session_end"
           ]
         },

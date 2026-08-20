@@ -112,6 +112,9 @@ importers:
       '@openagentfence/testing':
         specifier: workspace:*
         version: link:../testing
+      '@openagentfence/vault':
+        specifier: workspace:*
+        version: link:../vault
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.1

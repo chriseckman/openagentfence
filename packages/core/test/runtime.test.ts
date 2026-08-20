@@ -21,6 +21,7 @@ import {
   REASON_CODES,
   buildScopedView,
   emptyPolicyRuntimeState,
+  hash,
 } from "../src/index.js";
 import type {
   GuardModelProvider,
@@ -32,6 +33,63 @@ import type {
   PolicyEngine,
 } from "../src/index.js";
 import { fakeAdapter, mkAction, mkContext, mkFinding, mkScanResult } from "./helpers.js";
+
+describe("secret scanner vault handoff", () => {
+  it("materializes safe scanner markers as handles without releasing the matched value", async () => {
+    const secret = "syntheticPassword123";
+    let stored: string | undefined;
+    const vault: VaultAdapter = {
+      openSession: () => ({
+        store: async (name, value, kind = "SECRET") => {
+          stored = value;
+          return { name, kind, id: "a".repeat(32) };
+        },
+        createExecutorLookup: () => ({ lookup: async () => null }),
+        invalidateSession: async () => {},
+      }),
+    };
+    const scanner = defineScanner({
+      id: "synthetic-secret",
+      phases: ["PERCEPTION"],
+      kind: "deterministic",
+      scan: async (ctx) => ({
+        scanner: "synthetic-secret",
+        kind: "deterministic",
+        verdict: "sanitize",
+        severity: "high",
+        findings: [],
+        sanitizations: [
+          {
+            start: 0,
+            end: secret.length,
+            replacement: "[[OAF_SENSITIVE:CREDENTIAL:password]]",
+            provenance: ctx.provenance,
+          },
+        ],
+      }),
+    });
+    const session = new OpenAgentFence({
+      adapter: fakeAdapter({
+        observe: async () => ({
+          url: "https://example.com",
+          origin: "https://example.com",
+          frames: [],
+          ariaSnapshot: secret,
+          provenance: { trust: "web", timestamp: new Date().toISOString() },
+        }),
+      }),
+      scanners: [scanner],
+      vault,
+    }).start({ task: "test" });
+    const result = await session.observe();
+    expect(stored).toBe(secret);
+    expect(result.sanitizedText.value).toBe(
+      `<CREDENTIAL:detected_password_${hash(secret).slice(0, 8)}:${"a".repeat(32)}>`,
+    );
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(JSON.stringify(await session.end())).not.toContain(secret);
+  });
+});
 
 function allow(overrides: Partial<PolicyDecision> = {}): PolicyDecision {
   return { verdict: "ALLOW", reasons: [], matchedRules: [], policyHash: "h", ...overrides };
@@ -51,7 +109,9 @@ describe("action classification", () => {
   });
 
   it("treats a secret handle in data as high impact", () => {
-    expect(isHighImpact(mkAction("READ", { data: "<SECRET:x:abc12345>" }))).toBe(true);
+    expect(
+      isHighImpact(mkAction("READ", { data: "<SECRET:x:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>" })),
+    ).toBe(true);
   });
 
   it("detects cross-origin destinations", () => {
@@ -126,7 +186,12 @@ describe("private network detection", () => {
 
 describe("sanitization and normalizer", () => {
   it("applies sanitizations sequentially", () => {
-    expect(applySanitizations("base", ["first", "second"])).toBe("second");
+    expect(
+      applySanitizations("base", [
+        { value: "first", provenance: { trust: "web" } },
+        { value: "second", provenance: { trust: "web" } },
+      ]),
+    ).toBe("second");
     expect(applySanitizations("base", [])).toBe("base");
   });
 
@@ -195,11 +260,7 @@ describe("secret resolver stub", () => {
   it("always denies", async () => {
     const handle = mintHandle("SECRET", "k");
     expect(
-      await denyAllResolver.resolveForSink(
-        handle,
-        { origin: "https://a", fieldType: "password" },
-        { riskState: "NORMAL", permitsCredentialUse: true },
-      ),
+      await denyAllResolver.resolveForSink(handle, { origin: "https://a", fieldType: "password" }),
     ).toBeNull();
   });
 });
@@ -243,23 +304,29 @@ describe("session lifecycle", () => {
     const session = firewall.start({ task: "t" });
     await session.observe();
     session.setRisk("READ_ONLY", 80);
-    const link = await session.authorize(
-      mkAction("NAVIGATE", {
-        destination: "https://next.example.com/path",
-        target: { origin: "https://example.com" },
-        navigationOrigin: "link",
-      }),
+    const [link] = await session.authorizeActions(
+      [
+        mkAction("NAVIGATE", {
+          destination: "https://next.example.com/path",
+          target: { origin: "https://example.com" },
+          navigationOrigin: "link",
+        }),
+      ],
+      { instructedBy: "user" },
     );
-    const direct = await session.authorize(
-      mkAction("NAVIGATE", {
-        destination: "https://next.example.com/path",
-        target: { origin: "https://example.com" },
-        navigationOrigin: "direct",
-      }),
+    const [direct] = await session.authorizeActions(
+      [
+        mkAction("NAVIGATE", {
+          destination: "https://next.example.com/path",
+          target: { origin: "https://example.com" },
+          navigationOrigin: "direct",
+        }),
+      ],
+      { instructedBy: "user" },
     );
-    expect(link.verdict).toBe("ALLOW");
-    expect(direct.verdict).toBe("BLOCK");
-    expect(direct.reasons).toContain(REASON_CODES.session_restricted);
+    expect(link?.verdict).toBe("ALLOW");
+    expect(direct?.verdict).toBe("BLOCK");
+    expect(direct?.reasons).toContain(REASON_CODES.session_restricted);
   });
 
   it("makes restricted side effects require application approval and blocks secret typing", async () => {
@@ -272,7 +339,10 @@ describe("session lifecycle", () => {
     session.setRisk("RESTRICTED", 40);
     const sideEffect = await session.authorize(mkAction("PURCHASE"));
     const secretType = await session.authorize(
-      mkAction("TYPE", { target: { origin: "https://example.com" }, data: "<SECRET:x:abcdefgh>" }),
+      mkAction("TYPE", {
+        target: { origin: "https://example.com" },
+        data: "<SECRET:x:abcdefabcdefabcdefabcdefabcdefab>",
+      }),
     );
     expect(sideEffect.verdict).toBe("ALLOW");
     expect(secretType.verdict).toBe("BLOCK");
@@ -294,12 +364,13 @@ describe("session lifecycle", () => {
     await session.observe();
     session.setRisk("RESTRICTED", 40);
 
-    const decision = await session.authorize(
-      mkAction("NAVIGATE", { destination: "https://evil.example/path" }),
+    const [decision] = await session.authorizeActions(
+      [mkAction("NAVIGATE", { destination: "https://evil.example/path" })],
+      { instructedBy: "user" },
     );
 
-    expect(decision.verdict).toBe("BLOCK");
-    expect(decision.reasons).toEqual([
+    expect(decision?.verdict).toBe("BLOCK");
+    expect(decision?.reasons).toEqual([
       REASON_CODES.destination_not_allowed,
       REASON_CODES.session_restricted,
     ]);
@@ -329,7 +400,9 @@ describe("session lifecycle", () => {
     });
     const session = firewall.start({ task: "t" });
     const decision = await session.authorize(
-      mkAction("NAVIGATE", { destination: "https://example.com/?q=<SECRET:missing:deadbeef>" }),
+      mkAction("NAVIGATE", {
+        destination: "https://example.com/?q=<SECRET:missing:deadbeefdeadbeefdeadbeefdeadbeef>",
+      }),
     );
     expect(decision).toMatchObject({
       verdict: "BLOCK",
@@ -430,11 +503,11 @@ describe("session lifecycle", () => {
         }),
       ],
     });
-    const decision = await firewall
-      .start({ task: "t" })
-      .authorize(
-        mkAction("CLICK", { raw: { headers: { authorization: "<SECRET:missing:deadbeef>" } } }),
-      );
+    const decision = await firewall.start({ task: "t" }).authorize(
+      mkAction("CLICK", {
+        raw: { headers: { authorization: "<SECRET:missing:deadbeefdeadbeefdeadbeefdeadbeef>" } },
+      }),
+    );
 
     expect(decision).toMatchObject({
       verdict: "BLOCK",
@@ -460,10 +533,11 @@ describe("session lifecycle", () => {
       origin: "https://example.com",
       destination: "https://example.com/next",
       enforcement: "enforced",
+      provenance: { trust: "web", timestamp: "2026-01-01T00:00:00.000Z" },
       redirectHops: 1,
     };
 
-    expect(sink?.onRouteRequest?.(mutation)).toEqual({
+    expect(sink?.onRouteRequest?.(mutation)).toMatchObject({
       verdict: "block",
       reasons: [REASON_CODES.budget_exceeded],
       enforcement: "enforced",
@@ -513,7 +587,11 @@ describe("aggregator remaining precedence", () => {
 
   it("sanitized output yields ALLOW_SANITIZED", () => {
     const r = riskAggregator.aggregate({
-      scanResults: [mkScanResult("det", "deterministic", "sanitize", [], { sanitized: "clean" })],
+      scanResults: [
+        mkScanResult("det", "deterministic", "sanitize", [], {
+          sanitized: { value: "clean", provenance: { trust: "web" } },
+        }),
+      ],
       policyDecision: allow(),
       riskState: "NORMAL",
       score: 0,
@@ -563,9 +641,11 @@ describe("facade with full options", () => {
       }),
     };
     const vault: VaultAdapter = {
-      store: async () => mintHandle("SECRET", "k"),
-      lookup: async () => null,
-      invalidateSession: async () => {},
+      openSession: () => ({
+        store: async () => mintHandle("SECRET", "k"),
+        createExecutorLookup: () => ({ lookup: async () => null }),
+        invalidateSession: async () => {},
+      }),
     };
     const approvalHandler: ApprovalHandler = {
       requestApproval: async () => ({ approved: true, scope: "once" }),
@@ -576,8 +656,35 @@ describe("facade with full options", () => {
       vault,
       approvalHandler,
     });
-    const session = firewall.start({ task: "t" });
+    const session = firewall.start({
+      task: "t",
+      budgets: { maxGuardCalls: 1, maxGuardTokens: 4 },
+    });
     expect(session.guardProvider).toBe(guardModel);
+    const redactor = new RedactionRegistry();
+    const guardOutcome = await session.classifyWithGuard(
+      {
+        role: "text_injection",
+        excerpts: [redactor.redact("bounded excerpt")],
+        taskSummary: redactor.redact("trusted task"),
+        localeHints: ["en"],
+        budget: { maxTokens: 4 },
+      },
+      { signal: new AbortController().signal, deadline: Date.now() + 1_000 },
+    );
+    expect(guardOutcome).toMatchObject({ ok: true });
+    expect(
+      await session.classifyWithGuard(
+        {
+          role: "text_injection",
+          excerpts: [redactor.redact("second excerpt")],
+          taskSummary: redactor.redact("trusted task"),
+          localeHints: ["en"],
+          budget: { maxTokens: 4 },
+        },
+        { signal: new AbortController().signal, deadline: Date.now() + 1_000 },
+      ),
+    ).toEqual({ ok: false, kind: "budget_exhausted" });
     const decision = await session.requestApproval(
       { type: "PURCHASE", instructionProvenance: { trust: "application" } },
       [],
@@ -609,6 +716,6 @@ describe("scoped context view remaining branches", () => {
       action: mkAction("FILL", { data: "hello" }),
     });
     const view = buildScopedView(ctx, ["action:data"]);
-    expect(view.action?.["data"]).toBe("hello");
+    expect(view.action?.["data"]).toEqual({ value: "hello", provenance: { trust: "application" } });
   });
 });

@@ -11,6 +11,23 @@ describe("redaction", () => {
     expect(out).not.toContain("super-secret-123");
   });
 
+  it("redacts URI, base64url, and Unicode-normalized representations", () => {
+    const r = new RedactionRegistry();
+    r.registerSecret("S\u00e9cret value");
+    const encoded = encodeURIComponent("S\u00e9cret value");
+    const base64url = Buffer.from("S\u00e9cret value", "utf8")
+      .toString("base64")
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/, "");
+    const decomposed = "Se\u0301cret value";
+    const out = r.redact(`${encoded} ${base64url} ${decomposed}`);
+    expect(r.containsSecret(encoded)).toBe(true);
+    expect(out).not.toContain(encoded);
+    expect(out).not.toContain(base64url);
+    expect(out).not.toContain(decomposed);
+  });
+
   it("is a branded type so plain strings cannot be assigned to evidence", () => {
     // Type-level: RedactedEvidence is enforced by the compiler; this asserts the
     // runtime redaction path returns redacted output for a finding string.
@@ -39,5 +56,18 @@ describe("trace writer", () => {
     const doc = JSON.stringify(writer.document());
     expect(doc).not.toContain("hunter2");
     expect(doc).toContain("[REDACTED]");
+  });
+
+  it("bounds cyclic and deeply nested trace data", () => {
+    const writer = new TraceWriter(new RedactionRegistry());
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    let deep: unknown = "leaf";
+    for (let i = 0; i < 20; i += 1) deep = { deep };
+    writer.start({ sessionId: "s" });
+    writer.append("finding", { cyclic, deep });
+    const serialized = JSON.stringify(writer.document());
+    expect(serialized).toContain("[REDACTED:CYCLE]");
+    expect(serialized).toContain("[REDACTED:DEPTH]");
   });
 });

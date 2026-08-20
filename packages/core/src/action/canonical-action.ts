@@ -1,4 +1,4 @@
-import type { DataProvenance } from "../contracts/provenance.js";
+import type { DataProvenance, ProvenancedDatum } from "../contracts/provenance.js";
 
 export const ACTION_TYPES = [
   "READ",
@@ -53,7 +53,8 @@ export interface CanonicalAction {
   readonly navigationOrigin?: "link" | "direct";
   readonly target?: ActionTarget;
   readonly destination?: string;
-  readonly data?: unknown;
+  /** Security-relevant action data retains its source across authorization. */
+  readonly data?: ProvenancedDatum;
   readonly instructionProvenance: DataProvenance;
   readonly sideEffectClass?: SideEffectClass;
   readonly raw?: unknown;

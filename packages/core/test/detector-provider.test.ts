@@ -5,6 +5,7 @@ import {
   kindForTier,
   runGuardProvider,
   RedactionRegistry,
+  SessionBudgetLedger,
   validateGuardClassification,
 } from "../src/index.js";
 import type {
@@ -112,6 +113,13 @@ describe("guard-provider execution (OAF-CORE-018)", () => {
       constraints(),
     );
     expect(badVerdict).toEqual({ ok: false, kind: "malformed" });
+
+    const extraProperty = await runGuardProvider(
+      provider(async () => ({ ...BLOCK, authority: "allow" })),
+      request(),
+      constraints(),
+    );
+    expect(extraProperty).toEqual({ ok: false, kind: "malformed" });
   });
 
   it("rejects oversized input and output", async () => {
@@ -125,12 +133,56 @@ describe("guard-provider execution (OAF-CORE-018)", () => {
     const oversizedOutput = await runGuardProvider(
       provider(async () => ({
         ...BLOCK,
-        categories: ["x".repeat(20_000)],
+        categories: Array.from({ length: 32 }, () => "x".repeat(100)),
       })),
       request(),
       constraints({ maxOutputBytes: 100 }),
     );
     expect(oversizedOutput).toEqual({ ok: false, kind: "oversized" });
+
+    const unicodeOutcome = await runGuardProvider(
+      provider(async () => BLOCK),
+      {
+        role: "text_injection",
+        excerpts: [redactor.redact("\u754c")],
+        taskSummary: redactor.redact(""),
+        localeHints: [],
+      },
+      constraints({ maxInputBytes: 1 }),
+    );
+    expect(unicodeOutcome).toEqual({ ok: false, kind: "oversized" });
+  });
+
+  it("atomically consumes session call and token authority before dispatch", async () => {
+    const ledger = new SessionBudgetLedger({ maxGuardCalls: 1, maxGuardTokens: 4 }, 0);
+    let dispatches = 0;
+    const execution = constraints({
+      maxTokens: 4,
+      reserveDispatch: ({ calls, tokens }) =>
+        ledger.tryConsumeAll([
+          { kind: "guardCalls", amount: calls },
+          { kind: "guardTokens", amount: tokens },
+        ]),
+    });
+    expect(
+      await runGuardProvider(
+        provider(async () => {
+          dispatches += 1;
+          return BLOCK;
+        }),
+        request(),
+        execution,
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      await runGuardProvider(
+        provider(async () => BLOCK),
+        request(),
+        execution,
+      ),
+    ).toEqual({ ok: false, kind: "budget_exhausted" });
+    expect(dispatches).toBe(1);
+    expect(ledger.snapshot()).toMatchObject({ guardCalls: 1, guardTokens: 4 });
   });
 
   it("returns budget_exhausted when remaining budgets are zero", async () => {

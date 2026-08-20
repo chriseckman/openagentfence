@@ -127,4 +127,80 @@ describe("orchestrator timeouts and fail-closed", () => {
     await runPhase(registry, "PERCEPTION", mkContext("PERCEPTION"), LIMITS);
     expect(order).toEqual(["det", "sem"]);
   });
+
+  it("runs Tier 1 before Tier 2 regardless of registration priority", async () => {
+    const order: string[] = [];
+    const registry = new ScannerRegistry();
+    for (const [id, tier, priority] of [
+      ["tier2", "tier2", -100],
+      ["tier1", "tier1", 100],
+    ] as const) {
+      registry.register(
+        defineScanner({
+          id,
+          phases: ["PERCEPTION"],
+          kind: "semantic",
+          tier,
+          priority,
+          scan: async () => {
+            order.push(id);
+            return {
+              scanner: id,
+              kind: "semantic",
+              verdict: "allow",
+              severity: "info",
+              findings: [],
+            };
+          },
+        }),
+      );
+    }
+    const result = await runPhase(registry, "PERCEPTION", mkContext("PERCEPTION"), LIMITS);
+    expect(order).toEqual(["tier1", "tier2"]);
+    expect(result.tierMetrics).toEqual([
+      { tier: "tier0", status: "invoked", scannerCount: 0 },
+      { tier: "tier1", status: "invoked", scannerCount: 1 },
+      { tier: "tier2", status: "invoked", scannerCount: 1 },
+    ]);
+  });
+
+  it("does not invoke semantic scanners after a critical Tier 0 result", async () => {
+    const semantic = vi.fn(async () => ({
+      scanner: "semantic",
+      kind: "semantic" as const,
+      verdict: "allow" as const,
+      severity: "info" as const,
+      findings: [],
+    }));
+    const registry = new ScannerRegistry();
+    registry.register(
+      defineScanner({
+        id: "critical",
+        phases: ["PERCEPTION"],
+        kind: "deterministic",
+        scan: async () => ({
+          scanner: "critical",
+          kind: "deterministic",
+          verdict: "block",
+          severity: "critical",
+          findings: [],
+        }),
+      }),
+    );
+    registry.register(
+      defineScanner({
+        id: "semantic",
+        phases: ["PERCEPTION"],
+        kind: "semantic",
+        tier: "tier2",
+        scan: semantic,
+      }),
+    );
+    const result = await runPhase(registry, "PERCEPTION", mkContext("PERCEPTION"), LIMITS);
+    expect(semantic).not.toHaveBeenCalled();
+    expect(result.tierMetrics[2]).toMatchObject({
+      status: "skipped",
+      skipReason: "deterministic_critical",
+    });
+  });
 });

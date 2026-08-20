@@ -1,5 +1,17 @@
 import type { SecretHandle } from "./handle-codec.js";
 
+/** Executor-only capability for resolving a handle after core has authorized its sink. */
+export interface ExecutorSecretLookup {
+  lookup(handle: SecretHandle, signal?: AbortSignal): Promise<string | null>;
+}
+
+/** A vault view bound to exactly one firewall session. */
+export interface SessionVault {
+  store(name: string, value: string, kind?: SecretHandle["kind"]): Promise<SecretHandle>;
+  createExecutorLookup(): ExecutorSecretLookup;
+  invalidateSession(): Promise<void>;
+}
+
 /**
  * Storage for secret values, keyed by handle (ADR-0005). Implementations must
  * not perform authorization — that lives in `core`'s `SecretResolver` — and
@@ -7,7 +19,5 @@ import type { SecretHandle } from "./handle-codec.js";
  * path through a scoped resolver.
  */
 export interface VaultAdapter {
-  store(name: string, value: string): Promise<SecretHandle>;
-  lookup(handle: SecretHandle): Promise<string | null>;
-  invalidateSession(): Promise<void>;
+  openSession(sessionId: string): SessionVault;
 }

@@ -6,6 +6,7 @@
 
 import { CanonicalAction } from '@openagentfence/core';
 import { IntentStateSnapshot } from '@openagentfence/core';
+import { ProvenancedDatum } from '@openagentfence/core';
 import { SecuritySession } from '@openagentfence/core';
 import { UntrustedContent } from '@openagentfence/core';
 
@@ -19,7 +20,7 @@ export function normalizeObserveResult(result: unknown): CanonicalAction;
 export const STAGEHAND_NETWORK_CAPABILITIES: Readonly<Record<"upload" | "download" | "navigation" | "redirect" | "form" | "fetch" | "headers" | "websocket" | "send_beacon" | "service_worker" | "popup" | "webmcp", "enforced" | "observed_only" | "unavailable">>;
 
 // @public
-export const STAGEHAND_SECURITY_ERROR_CODES: readonly ["invalid_observe_response", "no_authorized_action", "ambiguous_authorized_action", "authorized_action_not_executable", "state_revalidation_unavailable", "action_intent_expired", "action_intent_mismatch", "extract_unavailable", "untrusted_output_invalid", "untrusted_output_oversized", "unsupported_file_effect", "disabled_path"];
+export const STAGEHAND_SECURITY_ERROR_CODES: readonly ["invalid_observe_response", "no_authorized_action", "ambiguous_authorized_action", "authorized_action_not_executable", "state_revalidation_unavailable", "action_intent_expired", "action_intent_mismatch", "extract_unavailable", "untrusted_output_invalid", "untrusted_output_oversized", "unsupported_file_effect", "unsupported_secret_sink", "disabled_path"];
 
 // @public
 export const STAGEHAND_SURFACE_COVERAGE: readonly [{
@@ -28,6 +29,9 @@ export const STAGEHAND_SURFACE_COVERAGE: readonly [{
 }, {
     readonly surface: "act";
     readonly status: "hooked";
+}, {
+    readonly surface: "act_secret_sink";
+    readonly status: "disabled";
 }, {
     readonly surface: "extract";
     readonly status: "hooked";
@@ -130,7 +134,7 @@ export function wrapStagehand(session: SecuritySession, stagehand: StagehandLike
     extract(input: unknown): Promise<UntrustedContent>;
     screenshotFirstContext(): Promise<{
         readonly screenshot: unknown;
-        readonly visibleText: string;
+        readonly visibleText: ProvenancedDatum<string>;
     }>;
     disabled(surface: string): never;
     webmcp: Readonly<{

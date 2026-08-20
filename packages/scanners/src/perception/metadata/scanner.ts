@@ -37,7 +37,7 @@ export function createMetadataScanner(): ReturnType<typeof defineScanner> {
       for (const [label, text] of sources) {
         for (const match of scanInjection(text)) {
           findings.push(
-            makeFinding(ctx.redactor, {
+            makeFinding(ctx, {
               id: `metadata:${label}:${match.ruleId}`,
               category: "metadata_instruction",
               title: "Instruction-like content in page metadata",

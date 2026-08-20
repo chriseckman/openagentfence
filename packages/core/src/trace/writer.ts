@@ -47,7 +47,13 @@ export class TraceWriter {
   }
 }
 
-export function redactDeep(value: unknown, redactor: Redactor): unknown {
+export function redactDeep(
+  value: unknown,
+  redactor: Redactor,
+  depth = 0,
+  seen = new WeakSet(),
+): unknown {
+  if (depth > 16) return "[REDACTED:DEPTH]";
   if (typeof value === "string") {
     return redactor.redact(value);
   }
@@ -55,9 +61,11 @@ export function redactDeep(value: unknown, redactor: Redactor): unknown {
     return value.map((item) => redactDeep(item, redactor));
   }
   if (typeof value === "object" && value !== null) {
+    if (seen.has(value)) return "[REDACTED:CYCLE]";
+    seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
-      out[key] = redactDeep(item, redactor);
+      out[key] = redactDeep(item, redactor, depth + 1, seen);
     }
     return out;
   }

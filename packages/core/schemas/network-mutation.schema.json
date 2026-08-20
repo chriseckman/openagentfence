@@ -3,7 +3,7 @@
   "$id": "https://openagentfence.dev/schemas/network-mutation.schema.json",
   "title": "OpenAgentFence NetworkMutation",
   "type": "object",
-  "required": ["surface", "initiator", "destination", "enforcement"],
+  "required": ["surface", "initiator", "destination", "enforcement", "provenance"],
   "additionalProperties": false,
   "properties": {
     "surface": {
@@ -37,6 +37,19 @@
     "frameOrigin": { "type": "string", "maxLength": 2048 },
     "destination": { "type": "string", "minLength": 1, "maxLength": 4096 },
     "enforcement": { "enum": ["enforced", "observed_only", "unavailable"] },
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["user", "application", "web", "tool", "memory"] },
+        "origin": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "frameOrigin": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "pageId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "elementId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "timestamp": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
     "metadata": {
       "type": "object",
       "required": ["headers"],

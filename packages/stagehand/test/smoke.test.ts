@@ -43,14 +43,20 @@ function allowingSession(): SecuritySession {
       return executor.execute();
     },
     recordRevalidation: vi.fn(),
-    inspectUntrustedText: vi.fn(async (content: string) => ({
-      content,
-      contentHash: "hash",
-      instructionEligible: false as const,
-      provenance: { trust: "web" as const },
-      revision: 0,
-      truncated: false,
-    })),
+    inspectUntrustedText: vi.fn(
+      async (
+        content: string,
+        _maxBytes?: number,
+        provenance?: { readonly trust: "web" | "tool" | "memory" },
+      ) => ({
+        content,
+        contentHash: "hash",
+        instructionEligible: false as const,
+        provenance: provenance ?? { trust: "web" as const },
+        revision: 0,
+        truncated: false,
+      }),
+    ),
     observe: vi.fn(),
   };
   return fake as unknown as SecuritySession;
@@ -118,6 +124,28 @@ describe("@openagentfence/stagehand", () => {
     expect((session as unknown as { bridgeCallCount: number }).bridgeCallCount).toBe(1);
     expect(act).toHaveBeenCalledTimes(1);
     expect(act.mock.calls[0]?.[0]).toEqual(observed);
+  });
+
+  it("keeps handle-bearing v4 actions out of act, self-heal, result, and model paths", async () => {
+    const handle = `<CREDENTIAL:login-password:${"a".repeat(32)}>`;
+    const { stagehand, observe, act } = stagehandWith([
+      {
+        selector: "#password",
+        description: "Password",
+        method: "fill",
+        arguments: [handle],
+      },
+    ]);
+    const session = allowingSession();
+
+    await expect(
+      wrapStagehand(session, stagehand, { stateResolver: resolver }).act(
+        `fill the password field with ${handle}`,
+      ),
+    ).rejects.toMatchObject({ code: "unsupported_secret_sink" });
+    expect(observe).toHaveBeenCalledWith(`fill the password field with ${handle}`);
+    expect(act).not.toHaveBeenCalled();
+    expect((session as unknown as { bridgeCallCount: number }).bridgeCallCount).toBe(0);
   });
 
   it("disables execution with zero calls when no deterministic resolver exists", async () => {
@@ -211,7 +239,7 @@ describe("@openagentfence/stagehand", () => {
       stateResolver: resolver,
     }).extract({ selector: "#x" });
     expect(value.instructionEligible).toBe(false);
-    expect(value.provenance.trust).toBe("web");
+    expect(value.provenance.trust).toBe("tool");
 
     const malformed = stagehandWith([], async () => ({ unsafe: true }));
     await expect(
@@ -219,8 +247,40 @@ describe("@openagentfence/stagehand", () => {
     ).rejects.toMatchObject({ code: "untrusted_output_invalid" });
   });
 
+  it("returns screenshot-first visible context with its web provenance", async () => {
+    const session = allowingSession();
+    (session.observe as ReturnType<typeof vi.fn>).mockResolvedValue({
+      observation: {
+        screenshot: { bytes: "synthetic" },
+        probe: {
+          nodes: [
+            { text: "shown", inViewport: true, hidden: false },
+            { text: "hidden", inViewport: false, hidden: true },
+          ],
+        },
+      },
+      sanitizedText: {
+        value: "shown",
+        provenance: { trust: "web", origin: "https://fixture.example" },
+      },
+    });
+
+    const context = await wrapStagehand(
+      session,
+      stagehandWith([]).stagehand,
+    ).screenshotFirstContext();
+    expect(context.visibleText).toEqual({
+      value: "shown",
+      provenance: { trust: "web", origin: "https://fixture.example" },
+    });
+  });
+
   it("exports an exhaustive data-only coverage table with disabled unhooked paths", () => {
     expect(STAGEHAND_SURFACE_COVERAGE).toContainEqual({ surface: "act", status: "hooked" });
+    expect(STAGEHAND_SURFACE_COVERAGE).toContainEqual({
+      surface: "act_secret_sink",
+      status: "disabled",
+    });
     expect(STAGEHAND_SURFACE_COVERAGE).toContainEqual({
       surface: "webmcp_invoke",
       status: "disabled",

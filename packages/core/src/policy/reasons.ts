@@ -7,6 +7,9 @@
 export const REASON_CODES = {
   destination_not_allowed: "destination_not_allowed",
   secret_sink_not_allowed: "secret_sink_not_allowed",
+  sensitive_value_in_egress: "sensitive_value_in_egress",
+  egress_inspection_incomplete: "egress_inspection_incomplete",
+  untrusted_cross_origin_egress: "untrusted_cross_origin_egress",
   navigation_instruction_originated_from_untrusted_dom:
     "navigation_instruction_originated_from_untrusted_dom",
   session_contains_high_confidence_prompt_injection:
@@ -52,6 +55,12 @@ export type ReasonCode = (typeof REASON_CODES)[keyof typeof REASON_CODES];
 export const REASON_CODE_DESCRIPTIONS: Readonly<Record<ReasonCode, string>> = {
   destination_not_allowed: "The action's destination is outside the allowed navigation scope.",
   secret_sink_not_allowed: "A secret would be released to a sink it is not bound to.",
+  sensitive_value_in_egress:
+    "A registered sensitive value would leave through an unapproved destination.",
+  egress_inspection_incomplete:
+    "A required egress inspection was cancelled, malformed, or exceeded its bounds.",
+  untrusted_cross_origin_egress:
+    "Tainted or sensitive data would leave through an untrusted cross-origin sink.",
   navigation_instruction_originated_from_untrusted_dom:
     "A navigation instruction originated from untrusted (web) content.",
   session_contains_high_confidence_prompt_injection:

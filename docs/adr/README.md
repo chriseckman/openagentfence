@@ -77,5 +77,6 @@ put detailed design in `docs/ARCHITECTURE.md` and link to it.
 | [0012](0012-policy-parser-and-engine-handoff.md) | Policy parser approval and staged engine handoff | Accepted |
 | [0013](0013-policy-runtime-state-and-suppression-trace.md) | Policy runtime state and suppression trace boundary | Accepted |
 | [0014](0014-decoder-timeout-accounting.md) | Decoder timeout accounting | Accepted |
+| [0017](0017-provenance-carrier-contract.md) | Provenance carrier contract | Accepted |
 
 Add a row here whenever an ADR is created or its status changes.

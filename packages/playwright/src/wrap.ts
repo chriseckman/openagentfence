@@ -5,8 +5,10 @@ import {
   fingerprint,
   type ActionIntent,
   type CanonicalAction,
+  type DataProvenance,
   type IntentStateSnapshot,
   type PageObservation,
+  provenanced,
   type SecuritySession,
 } from "@openagentfence/core";
 import { PlaywrightHelperRegistry } from "./helpers.js";
@@ -95,10 +97,10 @@ export function wrapPage(
     helper?: PlaywrightOperation["helper"],
     retried = false,
   ): Promise<void> => {
-    if (args.some((value) => value.includes("openagentfence://secret/"))) {
-      throw new TypeError("secret-handle-bearing Playwright operations are disabled until M4");
-    }
-    const observation = await session.observe();
+    // This is firewall-internal state capture for exact authorization. It is
+    // not a release of page content to an agent and therefore must not
+    // activate the session taint floor.
+    const observation = await session.observeForAuthorization();
     const operation = await bindExactOperationTarget(page, {
       adapter: "playwright",
       method,
@@ -331,7 +333,10 @@ async function canonicalAction(
       return {
         type: "EXECUTE_SCRIPT",
         target: { origin },
-        data: { helper: { name: operation.helper.name, sha256: operation.helper.sha256 } },
+        data: provenanced(
+          { helper: { name: operation.helper.name, sha256: operation.helper.sha256 } },
+          { trust: "application" },
+        ),
         instructionProvenance: { trust: "application" },
         raw: operation,
       };
@@ -375,7 +380,7 @@ function targetAction(
   return {
     type,
     target: { element: operation.selector, origin },
-    data: data ?? operation.arguments,
+    data: provenanced(data ?? operation.arguments, { trust: "application" }),
     instructionProvenance: { trust: "application" },
     raw: operation,
   };
@@ -395,11 +400,16 @@ async function submitOrClickAction(
       type: "SUBMIT",
       target: { element: selector, origin },
       destination: form.action,
-      data: {
-        method: form.method,
-        fields: form.fields,
-        ...(data !== undefined ? { data } : {}),
-      },
+      data: provenanced(
+        {
+          method: form.method,
+          fields: form.fields,
+          ...(data !== undefined ? { data } : {}),
+        },
+        // The wrapper-owned intent is application data, but this datum also
+        // contains form fields read from TB2. The carrier is therefore web.
+        { trust: "web", origin },
+      ),
       instructionProvenance: { trust: "application" },
       raw: operation,
     };
@@ -433,10 +443,24 @@ async function uploadAction(
     type: "UPLOAD",
     target: { element: selector, origin },
     destination: form.action,
-    data,
+    // The destination/form association remains separately web-derived. The
+    // upload declaration itself was validated at the wrapper's TB1 API and
+    // retains its explicit user/application source.
+    data: provenanced(data, uploadDataProvenance(data, origin)),
     instructionProvenance: { trust: "application" },
     raw: operation,
   };
+}
+
+function uploadDataProvenance(data: unknown, origin: string): DataProvenance {
+  if (!isRecord(data) || !isRecord(data["provenance"])) {
+    throw new TypeError("guarded upload data requires trusted provenance");
+  }
+  const trust = data["provenance"]["trust"];
+  if (trust !== "user" && trust !== "application") {
+    throw new TypeError("guarded upload data requires user or application provenance");
+  }
+  return { trust, origin };
 }
 
 async function downloadAction(
@@ -574,7 +598,9 @@ export async function currentState(
       "method",
       "target",
       "type",
+      "id",
       "name",
+      "autocomplete",
       "role",
       "aria-disabled",
       "disabled",
@@ -587,6 +613,7 @@ export async function currentState(
     const form = element.closest("form");
     return {
       attributes,
+      tagName: (element as unknown as { readonly tagName?: string }).tagName ?? "",
       visible: !(
         style.display === "none" ||
         style.visibility === "hidden" ||
@@ -599,12 +626,14 @@ export async function currentState(
     };
   })) as {
     readonly attributes: Readonly<Record<string, string>>;
+    readonly tagName: string;
     readonly visible: boolean;
     readonly enabled: boolean;
     readonly formAction: string | null;
   };
   const attributes = Object.freeze({
     ...details.attributes,
+    tagName: details.tagName.toLowerCase(),
     enabled: String(details.enabled),
   });
   const href = details.attributes["href"];

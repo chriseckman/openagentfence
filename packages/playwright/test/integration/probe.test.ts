@@ -7,9 +7,10 @@ import {
   runAdapterConformance,
   type PolicyEngine,
   validateProbeResult,
+  validateTraceDocument,
 } from "@openagentfence/core";
 import { startFixtureServer, type FixtureServer } from "@openagentfence/testing";
-import { PLAYWRIGHT_NETWORK_CAPABILITIES, playwrightAdapter } from "../../src/index.js";
+import { PLAYWRIGHT_NETWORK_CAPABILITIES, playwrightAdapter, wrapPage } from "../../src/index.js";
 import type { Browser, Page } from "playwright";
 
 let browser: Browser;
@@ -147,6 +148,11 @@ describe("probe signals (OAF-CORE-014)", () => {
       readonly origin?: string;
       readonly destination: string;
       readonly metadata?: { readonly headers: Readonly<Record<string, string>> };
+      readonly provenance: {
+        readonly trust: string;
+        readonly elementId?: string;
+        readonly timestamp?: string;
+      };
     }> = [];
     const dispose = adapter.subscribe("session-under-test", {
       onNavigation: (event) => events.push(event),
@@ -214,6 +220,14 @@ describe("probe signals (OAF-CORE-014)", () => {
     expect(
       mutations.some((mutation) => mutation.metadata?.headers.authorization === "[REDACTED]"),
     ).toBe(true);
+    expect(
+      mutations.every(
+        (mutation) =>
+          mutation.provenance.trust === "web" &&
+          mutation.provenance.elementId !== undefined &&
+          mutation.provenance.timestamp !== undefined,
+      ),
+    ).toBe(true);
     const capturedBeforeDetach = events.length + mutations.length;
     dispose();
     await page.goto(`${baseUrl}/after-detach`);
@@ -239,6 +253,26 @@ describe("probe signals (OAF-CORE-014)", () => {
       popup: "unavailable",
       webmcp: "unavailable",
     });
+  });
+
+  it("reports the exact route-enabled per-surface capability matrix", async () => {
+    const page = await browser.newPage();
+    const adapter = playwrightAdapter(page, { routeRequests: true });
+    expect(adapter.capabilities.network).toEqual({
+      navigation: "enforced",
+      redirect: "observed_only",
+      form: "observed_only",
+      fetch: "enforced",
+      headers: "observed_only",
+      websocket: "observed_only",
+      send_beacon: "observed_only",
+      service_worker: "unavailable",
+      upload: "observed_only",
+      download: "observed_only",
+      popup: "unavailable",
+      webmcp: "unavailable",
+    });
+    await page.close();
   });
 
   it("passes the framework-neutral adapter conformance suite", async () => {
@@ -312,6 +346,35 @@ describe("opt-in routed destination enforcement (OAF-SEC-001/002)", () => {
     await page.close();
   });
 
+  it("records a proven live ActionIntent correlation without using it as network authority", async () => {
+    fixtures = await startFixtureServer();
+    const [originA, originB] = fixtures.origins;
+    if (originA === undefined || originB === undefined) throw new Error("fixture origins missing");
+    const page = await browser.newPage();
+    await page.goto(`${originA.origin}/`);
+    const firewall = new (await import("@openagentfence/core")).OpenAgentFence({
+      adapter: playwrightAdapter(page, { routeRequests: true }),
+      policy: destinationPolicy(),
+    });
+    const session = firewall.start({
+      task: "navigate between the two trusted fixture origins",
+      capabilities: { privateNetwork: true, navigation: "allowlist" },
+      origins: { allow: [originA.origin, originB.origin] },
+    });
+    await wrapPage(session, page).goto(`${originB.origin}/capture`);
+    const trace = await session.end();
+    expect(validateTraceDocument(trace).ok).toBe(true);
+    const mutation = trace.events.find(
+      (event) =>
+        event.kind === "network_mutation" &&
+        event.data["destination"] === `${originB.origin}/capture`,
+    );
+    expect(mutation?.data["verdict"]).toBe("continue");
+    expect(mutation?.data["correlation"]).toBe("matched");
+    expect(typeof mutation?.data["intentId"]).toBe("string");
+    await page.close();
+  });
+
   it("reports redirect hops as observed-only rather than claiming preflight enforcement", async () => {
     fixtures = await startFixtureServer();
     const [originA, originB] = fixtures.origins;
@@ -338,6 +401,137 @@ describe("opt-in routed destination enforcement (OAF-SEC-001/002)", () => {
     );
     expect(redirectEvent).toBeDefined();
     expect(fixtures.requests.some((request) => request.origin === originB.origin)).toBe(true);
+    await page.close();
+  });
+
+  it("records routed form and beacon effects as explicit gaps without claiming prevention", async () => {
+    fixtures = await startFixtureServer();
+    const origin = fixtures.origins[0];
+    if (origin === undefined) throw new Error("fixture origin missing");
+    const page = await browser.newPage();
+    await page.goto(`${origin.origin}/`);
+    const firewall = new (await import("@openagentfence/core")).OpenAgentFence({
+      adapter: playwrightAdapter(page, { routeRequests: true }),
+      policy: destinationPolicy(),
+    });
+    const session = firewall.start({
+      task: "measure non-enforced network initiators",
+      capabilities: {
+        privateNetwork: true,
+        navigation: "allowlist",
+        externalCommunication: true,
+      },
+      origins: { allow: [origin.origin] },
+    });
+
+    const beforeForm = fixtures.requests.length;
+    await Promise.all([
+      page.waitForURL(`${origin.origin}/capture`),
+      page.evaluate((url) => {
+        const browser = globalThis as unknown as {
+          document: {
+            createElement(tag: string): unknown;
+            body: { append(node: unknown): void };
+          };
+        };
+        const form = browser.document.createElement("form") as {
+          method: string;
+          action: string;
+          append(node: unknown): void;
+          submit(): void;
+        };
+        form.method = "POST";
+        form.action = url;
+        const field = browser.document.createElement("input") as { name: string; value: string };
+        field.name = "benign";
+        field.value = "value";
+        form.append(field);
+        browser.document.body.append(form);
+        form.submit();
+      }, `${origin.origin}/capture`),
+    ]);
+    expect(fixtures.requests.length).toBeGreaterThan(beforeForm);
+
+    await page.goto(`${origin.origin}/`);
+    const beforeBeacon = fixtures.requests.length;
+    expect(
+      await page.evaluate((url) => {
+        const browser = globalThis as unknown as {
+          navigator: { sendBeacon(destination: string, data: string): boolean };
+        };
+        return browser.navigator.sendBeacon(url, "benign-beacon");
+      }, `${origin.origin}/capture`),
+    ).toBe(true);
+    await expect.poll(() => fixtures?.requests.length ?? 0).toBeGreaterThan(beforeBeacon);
+
+    const trace = await session.end();
+    for (const surface of ["form", "send_beacon"] as const) {
+      const event = trace.events.find(
+        (entry) => entry.kind === "network_mutation" && entry.data["surface"] === surface,
+      );
+      expect(event?.data["verdict"]).toBe("observe_only_gap");
+      expect(event?.data["reasons"]).toContain("network_enforcement_unavailable");
+    }
+    await page.close();
+  });
+
+  it("blocks every D-11 secret form before an unbound routed fetch reaches the target", async () => {
+    fixtures = await startFixtureServer();
+    const [originA, originB] = fixtures.origins;
+    if (originA === undefined || originB === undefined) throw new Error("fixture origins missing");
+    const page = await browser.newPage();
+    await page.goto(`${originA.origin}/`);
+    const { OpenAgentFence, egressMatchForms } = await import("@openagentfence/core");
+    const { inMemoryVault } = await import("@openagentfence/vault");
+    const firewall = new OpenAgentFence({
+      adapter: playwrightAdapter(page, { routeRequests: true }),
+      policy: destinationPolicy(),
+      vault: inMemoryVault(),
+    });
+    const session = firewall.start({
+      task: "send a synthetic value only to its declared route sink",
+      capabilities: { privateNetwork: true, navigation: "allowlist", externalCommunication: true },
+      origins: { allow: [originA.origin, originB.origin] },
+      secrets: [
+        {
+          name: "dlp-value",
+          kind: "SECRET",
+          origins: [originA.origin],
+          fieldTypes: ["routed_request_body"],
+        },
+      ],
+    });
+    const secret = "  Dlp-Sentinel~~~  ";
+    await session.registerSecret("dlp-value", secret);
+    const allowed = await page.evaluate(
+      ([url, body]) => fetch(url, { method: "POST", body }).then((response) => response.ok),
+      [`${originA.origin}/capture`, secret] as const,
+    );
+    expect(allowed).toBe(true);
+    expect(
+      fixtures.requests.some(
+        (request) => request.origin === originA.origin && request.body === secret,
+      ),
+    ).toBe(true);
+
+    const beforeTarget = fixtures.requests.filter(
+      (request) => request.origin === originB.origin,
+    ).length;
+    for (const form of egressMatchForms(secret)) {
+      await expect(
+        page.evaluate(([url, body]) => fetch(url, { method: "POST", body }), [
+          `${originB.origin}/capture`,
+          form,
+        ] as const),
+      ).rejects.toThrow();
+    }
+    expect(fixtures.requests.filter((request) => request.origin === originB.origin)).toHaveLength(
+      beforeTarget,
+    );
+
+    const trace = await session.end();
+    expect(JSON.stringify(trace)).not.toContain(secret);
+    expect(trace.events.some((event) => event.kind === "egress_inspection")).toBe(true);
     await page.close();
   });
 });

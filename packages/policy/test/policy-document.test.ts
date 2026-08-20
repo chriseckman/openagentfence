@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  createPolicyEngine,
   isValidatedPolicyDocument,
   loadPolicyDocument,
   parsePolicyDocumentSource,
@@ -87,7 +88,7 @@ describe("bounded policy document loader", () => {
         },
         navigation: { mode: "internet", block_private_networks: "true" },
         actions: { upload: "block", invented: "allow" },
-        secrets: { resolution: "browser" },
+        secrets: { resolution: "browser", restricted_mode: "allow_new" },
         injection: { high_confidence: "allow", critical: "allow" },
         budgets: {
           max_actions: -1,
@@ -118,7 +119,7 @@ describe("bounded policy document loader", () => {
       defaults: { scanner_failure: { low_risk: "block" } },
       navigation: { mode: "allowlist", block_private_networks: false },
       actions: { download: "allow" },
-      secrets: { resolution: "executor_only" },
+      secrets: { resolution: "executor_only", restricted_mode: "deny_all" },
       injection: { high_confidence: "block", critical: "block" },
       budgets: { max_actions: 1, max_duration_ms: 2, max_navigations: 3, on_exceeded: "block" },
       scanners: { deterministic: { enabled: true } },
@@ -128,6 +129,7 @@ describe("bounded policy document loader", () => {
       risk: { restricted_at: 1, quarantine_at: 2 },
     });
     expect(policy.scanners?.deterministic?.enabled).toBe(true);
+    expect(createPolicyEngine(policy).secretResolution?.restrictedMode).toBe("deny_all");
     const exotic = Object.create({ inherited: true }) as { version: 1 };
     exotic.version = 1;
     await expectInvalid(() => loadPolicyDocument(exotic));
@@ -145,6 +147,45 @@ describe("bounded policy document loader", () => {
       loadPolicyDocument({
         version: 1,
         navigation: { max_redirect_hops: 6, internal_network_ranges: ["not-a-cidr"] },
+      }),
+    );
+  });
+
+  it("accepts bounded data-only secret patterns and rejects regex-shaped patterns", async () => {
+    const policy = await loadPolicyDocument({
+      version: 1,
+      scanners: {
+        secret: {
+          patterns: [
+            {
+              id: "vendor_key",
+              prefix: "vendor_",
+              alphabet: "base64url",
+              min_length: 20,
+              max_length: 24,
+              kind: "SECRET",
+            },
+          ],
+        },
+      },
+    });
+    expect(policy.scanners?.["secret"]?.patterns?.[0]?.prefix).toBe("vendor_");
+    await expectInvalid(() =>
+      loadPolicyDocument({
+        version: 1,
+        scanners: {
+          secret: {
+            patterns: [
+              {
+                id: "unsafe",
+                prefix: "(a+)+$",
+                alphabet: "alphanumeric",
+                min_length: 7,
+                max_length: 8,
+              },
+            ],
+          },
+        },
       }),
     );
   });
