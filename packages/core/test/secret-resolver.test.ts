@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   compileTaskContract,
-  createScopedSecretResolver,
-  mintHandle,
   OpenAgentFence,
   provenanced,
   serializeHandle,
@@ -16,6 +14,8 @@ import {
   type SecretHandle,
   type VaultAdapter,
 } from "../src/index.js";
+import { mintHandle } from "../src/secrets/handle-codec.js";
+import { createScopedSecretResolver } from "../src/secrets/resolver.js";
 import { mintAuthorizedAction } from "../src/action/authorized.js";
 import { fakeAdapter } from "./helpers.js";
 

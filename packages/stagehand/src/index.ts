@@ -1,3 +1,9 @@
+/**
+ * @packageDocumentation
+ * Verified Stagehand 4.0.1 adapter APIs for the experimental v0.1 line.
+ * @experimental
+ */
+
 export {
   stagehandAdapter,
   authorizeActions,

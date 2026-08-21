@@ -6,7 +6,6 @@ import {
   createStoredMemoryItem,
   defineScanner,
   hash,
-  mintHandle,
   secretRedactionForms,
   validateStoredMemoryItem,
   type DataProvenance,
@@ -14,6 +13,7 @@ import {
   type SecurityContext,
   type VaultAdapter,
 } from "../src/index.js";
+import { mintHandle } from "../src/secrets/handle-codec.js";
 import { fakeAdapter } from "./helpers.js";
 
 const provenance: DataProvenance = {

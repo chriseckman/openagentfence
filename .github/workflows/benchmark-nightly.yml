@@ -13,7 +13,7 @@ env:
 
 jobs:
   benchmark:
-    name: Offline scripted benchmark (nightly profile)
+    name: Offline benchmark and control-performance run (nightly profile)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

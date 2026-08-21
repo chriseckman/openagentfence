@@ -47,7 +47,7 @@ export const BENCHMARK_PROFILES: Readonly<{
 }>;
 
 // @public (undocumented)
-export const BENCHMARK_SCHEMA_VERSION = "1.0.0";
+export const BENCHMARK_SCHEMA_VERSION = "1.1.0";
 
 // @public (undocumented)
 export interface BenchmarkAgent {
@@ -154,6 +154,28 @@ export interface BenchmarkComponentPin {
     readonly version: string;
 }
 
+// @public
+export interface BenchmarkEnvironmentPin {
+    // (undocumented)
+    readonly cpuCount: number;
+    // (undocumented)
+    readonly nodeVersion: string;
+    // (undocumented)
+    readonly operatingSystem: string;
+    // (undocumented)
+    readonly runnerClass: string;
+}
+
+// @public
+export interface BenchmarkExecutionPin {
+    // (undocumented)
+    readonly armOrder: string;
+    // (undocumented)
+    readonly repetitions: number;
+    // (undocumented)
+    readonly warmupIterations: number;
+}
+
 // @public (undocumented)
 export interface BenchmarkGuardMeasurement {
     // (undocumented)
@@ -237,6 +259,10 @@ export interface BenchmarkPinnedMetadata {
     readonly corpusHash: string;
     // (undocumented)
     readonly corpusSchemaVersion: string;
+    // (undocumented)
+    readonly environment: BenchmarkEnvironmentPin;
+    // (undocumented)
+    readonly execution: BenchmarkExecutionPin;
     // (undocumented)
     readonly framework: BenchmarkComponentPin;
     // (undocumented)
@@ -666,7 +692,5 @@ export function validateBenchmarkReport(value: unknown): value is BenchmarkRepor
 
 // @public
 export function validateCorpusCase(input: unknown): CorpusCase | null;
-
-// (No @packageDocumentation comment for this package)
 
 ```

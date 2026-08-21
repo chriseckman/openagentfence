@@ -19,8 +19,9 @@ deterministic controls still restrict what the agent can see, disclose, and
 do** — what it may perceive, which actions it may execute, which origins it
 may reach, where secrets may go, and what it may remember.
 
-> **Status: pre-release.** M0-M6 P0 implementation is complete with local
-> validation; M7-M8 verification and release work remains active. No packages
+> **Status: pre-release.** M0-M7 P0 implementation and the M8 local
+> measurement prerequisites are complete with local validation; release hardening,
+> documentation, and authorized publication work remain active. No packages
 > are published yet, and nothing below should be
 > read as production-ready. See [Status](#status).
 
@@ -60,21 +61,23 @@ deferred work. See [Status](#status) for release qualification.
 | Operations | BYOK guard models: OpenAI-compatible, Anthropic, Google, xAI, Ollama (local-first transport), or a custom callback; OpenCode 1.18.18 is a typed-unavailable optional surface |
 | Integrations | Stagehand (first-class) and Playwright (independent) adapters; framework-neutral core |
 | Audit | Redacted structured security traces with machine-readable reasons for every block; replay is planned as P1 |
-| Testing | Local fixture server, adaptive-ready executable corpus, recorded Stagehand scenarios, offline Promptfoo comparison, reproducible property/invariant gates, and a pinned guarded-versus-unguarded benchmark runner; the full CLI and M8 measurement gates remain active |
+| Testing | Local fixture server, executable corpus CLI, recorded Stagehand scenarios, offline Promptfoo comparison, reproducible property/invariant gates, and a pinned guarded-versus-unguarded benchmark runner; release hardening remains active |
 
 ## Status
 
 | State | Items |
 |-------|-------|
 | **Available locally (M0-M6)** | Core contracts and traces; policy and deterministic Action Guard; Playwright/Stagehand fail-closed adapters; provenance carrier, taint floor, bounded coarse source-to-sink registry, and guarded memory write/read lifecycle; vault, secret scanning/resolution, DLP and Network Mutation Guard; offline-tested provider adapters, tier router, and opt-in BYOK scanner. Capability matrices identify enforced, observed-only, and unavailable surfaces. |
-| **In development (M7-M8)** | M7 adversarial-verification gate, M8 measurement/tuning, API/docs freeze, and release hardening. The P0 corpus CLI is available locally. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). |
-| **Required before v0.1** | M7-M8 P0 gates, current benchmark and false-positive evidence, complete release validation, and separately authorized/verifiable external publication. |
+| **Complete locally (M7 and M8 measurement)** | The 227-case/31-fixture corpus CLI, invariant/property gates, Stagehand recordings, offline Promptfoo comparison, and a pinned local control measurement. See [benchmarks](docs/benchmarks.md) for its exact scope and limits. |
+| **In development (release hardening)** | API/docs finalization, release pipeline/RC work, and required local revalidation. Remote branch protection, signing, npm provenance, and GitHub release evidence remain external release gates. |
+| **Required before v0.1** | Complete release validation plus separately authorized and verifiable external publication. |
 | **Deferred (v0.2+)** | Visual guard model and screenshot/DOM discrepancy detection or semantic matching, data-flow graph, signed receipts, network proxy, document parsing, enterprise DLP, reputation feeds, plugin marketplace, browser extension, hosted dashboard, Python SDK. |
 
-There are no published benchmark results. The report format and offline smoke
-runner are documented in [docs/benchmarks.md](docs/benchmarks.md). Any numbers that appear in the PRD
-are illustrative targets, not measurements. Claims will be made only when
-reproducible (pinned framework/model versions and corpus hash).
+One pinned local control measurement is documented in
+[docs/benchmarks.md](docs/benchmarks.md). It is an after-snapshot,
+providerless microbenchmark on one named runner, not a remote-CI, end-to-end,
+or model-efficacy claim. PRD numbers remain targets; any broader claim requires
+reproducible exact pins and a corpus hash.
 
 ## Architecture overview
 
@@ -115,12 +118,14 @@ import { OpenAgentFence } from "@openagentfence/core";
 import { chromium } from "playwright";
 import { playwrightAdapter, wrapPage } from "@openagentfence/playwright";
 import { loadPolicy } from "@openagentfence/policy";
+import { defaultScanners } from "@openagentfence/scanners";
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const firewall = new OpenAgentFence({
   adapter: playwrightAdapter(page),
   policy: await loadPolicy("./openagentfence.yml"),
+  scanners: defaultScanners(),
 });
 
 const session = await firewall.start({
@@ -145,7 +150,7 @@ const trace = await session.end();
 await browser.close();
 ```
 
-Optional BYOK guard model (external network call, opt-in):
+Optional BYOK guard model (application opt-in):
 
 ```typescript
 import { guardProvider } from "@openagentfence/providers";
@@ -163,6 +168,23 @@ const firewall = new OpenAgentFence({
 enable a guard model construct it separately with
 `@openagentfence/providers`; provider credentials remain in application setup
 and the provider adapter and never enter policy or `core`.
+
+The compiled, local-only quick-start composition is in
+[`examples/quick-start/README.md`](examples/quick-start/README.md). It uses `loadPolicy()`, the
+default scanner catalog, and a supplied adapter; it makes no provider call or
+browser navigation by itself.
+
+### External-call boundary
+
+Deterministic scanners, the corpus CLI, local fixture server, `init`, default
+`doctor`, `explain`, policy validation, and checked-in Promptfoo example are
+offline. `doctor --check-provider` makes a bounded connectivity request only
+when explicitly requested. OpenAI-compatible, Anthropic, Google, and xAI guard
+providers use direct HTTPS only when constructed by the application. The
+Ollama transport accepts loopback endpoints only and is marked local-only;
+custom providers declare their own `makesExternalCalls` value. OpenCode is a
+typed-unavailable optional surface. No feature reads provider credentials from
+the environment.
 
 ## Design principles
 

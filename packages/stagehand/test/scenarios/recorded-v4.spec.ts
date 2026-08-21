@@ -11,6 +11,7 @@ import {
   type PageObservation,
   type SecuritySession,
 } from "@openagentfence/core";
+import { STAGEHAND_EXECUTION } from "@openagentfence/core/internal";
 import { defaultScanners } from "@openagentfence/scanners";
 import { loadCorpusFile } from "@openagentfence/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -421,15 +422,14 @@ function allowingSession(): SecuritySession {
       decision: { verdict: "ALLOW", reasons: [], action },
       authorized: { intent } as never,
     })),
-    executeAuthorizedWith: async (
-      _authorized: unknown,
-      executor: { execute(): Promise<unknown> },
-    ) => {
+    recordRevalidation: vi.fn(),
+  };
+  Object.defineProperty(fake, STAGEHAND_EXECUTION, {
+    value: async (_authorized: unknown, executor: { execute(): Promise<unknown> }) => {
       fake.bridgeCallCount += 1;
       return executor.execute();
     },
-    recordRevalidation: vi.fn(),
-  };
+  });
   return fake as unknown as SecuritySession;
 }
 

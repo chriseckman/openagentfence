@@ -23,9 +23,18 @@ Security-sensitive paths additionally require maintainer review via
 ## Remote verification status
 
 These settings are the required release configuration, not a claim about the
-current GitHub repository. On 2026-08-20, the remote `main` protection endpoint
-returned `404` and repository rulesets were empty; the deployed workflow list
-also did not include this TypeScript CI workflow. Local workflow validation and
-the executable corpus gate are complete, but a maintainer must configure and
-verify the required remote checks before the PS-025 release step. This remains
-an external release-only gate under D-03.
+current GitHub repository. A fresh read-only verification on 2026-08-21 found
+that the remote `main` protection endpoint still returned `404`, repository
+rulesets were still empty, and only legacy Python/Copilot workflows were
+deployed. The remote has no `release` environment (only `copilot` and
+`pypi`), so protected release-environment, signing-custody, and trusted
+publisher evidence is also absent. Local workflow validation and the
+executable corpus gate are complete, but a maintainer must configure and verify
+the required remote checks before the PS-025 release step. This remains an
+external release-only gate under D-03/D-04.
+
+The local [release pipeline](release-pipeline.md) is also configured for a
+protected `release` environment, CI-only OIDC/npm provenance, artifact
+attestation, and signed tags. Those are required remote settings, not present
+remote evidence. They remain unavailable until a maintainer configures and
+verifies them during PS-025.

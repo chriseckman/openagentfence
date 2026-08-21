@@ -1,9 +1,12 @@
 # @openagentfence/scanners
 
-The deterministic (and, later, BYOK) scanner catalog of OpenAgentFence
+The deterministic and optional BYOK scanner catalog of OpenAgentFence
 ([ARCHITECTURE.md](../../docs/ARCHITECTURE.md) §3). Scanners implement the
 `SecurityScanner` contract from `@openagentfence/core` and are clean-room
 implementations (ADR-0006).
+
+The source-backed phase, tier, permission, and capability catalogue is in
+[docs/scanners.md](../../docs/scanners.md).
 
 **Implemented (M2, `OAF-BROWSER-005…011`):**
 
@@ -79,11 +82,15 @@ new OpenAgentFence({
 
 The facade constructs the scanner per session and supplies only a narrow,
 budget-consuming classifier callback. There are no live-model efficacy claims;
-multilingual tests use deterministic fakes, and corpus benchmarking remains M7.
+multilingual tests use deterministic fakes. The current local control
+measurement is documented in [benchmarks](../../docs/benchmarks.md); it makes
+no provider/model efficacy or recommendation claim.
 
 Probe truncation downgrades otherwise-visible content to
 `VISIBLE_LOW_CONFIDENCE`; the scanner layer preserves the boundary rather than
 silently claiming a complete observation.
 
-**Status: not yet published.** No API is stable; see the
+**Status: experimental through v0.3.** No API is stable; see the
 [implementation plan](../../docs/IMPLEMENTATION_PLAN.md).
+Every package-root export is experimental through v0.3; see the
+[v0.1 API stability ledger](../../docs/api-stability.md).

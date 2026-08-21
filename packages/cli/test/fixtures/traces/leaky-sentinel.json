@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.6.0",
+  "events": [
+    {
+      "kind": "session_start",
+      "timestamp": "2026-08-21T00:00:00.000Z",
+      "data": {
+        "sessionId": "fixture-session",
+        "policyHash": "4dd7c765563aa3cd88ebb51f6b4c4681c64b3c16e45edfc58edb8efb64fcba3f",
+        "versions": { "schema": "1.6.0" },
+        "raw_provider_token": "oaf_synthetic_secret_must_not_render"
+      }
+    },
+    {
+      "kind": "session_end",
+      "timestamp": "2026-08-21T00:00:01.000Z",
+      "data": {}
+    }
+  ]
+}

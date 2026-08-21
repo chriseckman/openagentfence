@@ -1,4 +1,5 @@
 import type { SecretHandle } from "./handle-codec.js";
+import type { VaultExecutorAccess } from "./vault-access.js";
 
 /** Executor-only capability for resolving a handle after core has authorized its sink. */
 export interface ExecutorSecretLookup {
@@ -8,7 +9,8 @@ export interface ExecutorSecretLookup {
 /** A vault view bound to exactly one firewall session. */
 export interface SessionVault {
   store(name: string, value: string, kind?: SecretHandle["kind"]): Promise<SecretHandle>;
-  createExecutorLookup(): ExecutorSecretLookup;
+  /** Returns raw values only for a session-private capability minted by core. */
+  createExecutorLookup(access: VaultExecutorAccess): ExecutorSecretLookup;
   invalidateSession(): Promise<void>;
 }
 
@@ -19,5 +21,6 @@ export interface SessionVault {
  * path through a scoped resolver.
  */
 export interface VaultAdapter {
-  openSession(sessionId: string): SessionVault;
+  /** Opens a session only when core supplies its unforgeable executor capability. */
+  openSession(sessionId: string, access: VaultExecutorAccess): SessionVault;
 }

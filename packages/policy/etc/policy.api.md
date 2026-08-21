@@ -157,6 +157,4 @@ export type ValidatedPolicyDocument = PolicyDocument & {
 // @public
 export function validatePolicy(document: ValidatedPolicyDocument): PolicyValidationReport;
 
-// (No @packageDocumentation comment for this package)
-
 ```

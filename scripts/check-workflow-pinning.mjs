@@ -107,6 +107,42 @@ if (!/pnpm benchmark:pr/.test(benchmarkNightly)) {
   throw new Error("nightly benchmark workflow does not run the offline scripted benchmark");
 }
 
+const dco = workflow.match(/\n  dco:\n([\s\S]*?)(?=\n  [a-z][\w-]*:|$)/);
+if (dco === null) throw new Error("CI workflow is missing the required DCO job");
+const dcoJob = dco[1] ?? "";
+if (!/fetch-depth:\s*0/.test(dcoJob)) {
+  throw new Error("CI DCO job must fetch complete history before computing its range");
+}
+if (/git rev-list[^\n]*\|\|/.test(dcoJob)) {
+  throw new Error("CI DCO job must fail closed when its commit range cannot be resolved");
+}
+if (!/git log[^\n]*Signed-off-by:/.test(dcoJob)) {
+  throw new Error("CI DCO job must verify every commit has a Signed-off-by trailer");
+}
+
+const releaseCandidate = workflow.match(/\n  release-candidate:\n([\s\S]*?)(?=\n  [a-z][\w-]*:|$)/);
+if (releaseCandidate === null) {
+  throw new Error("CI workflow is missing the local release-candidate artifact audit");
+}
+const releaseCandidateJob = releaseCandidate[1] ?? "";
+if (!/node-version:\s*24/.test(releaseCandidateJob)) {
+  throw new Error("CI release-candidate audit must use the supported Node 24 runtime");
+}
+if (!/pnpm release:candidate/.test(releaseCandidateJob)) {
+  throw new Error("CI release-candidate audit must create the staged candidate artifacts");
+}
+if (!/pnpm test:release-artifacts/.test(releaseCandidateJob)) {
+  throw new Error("CI release-candidate audit must revalidate its packed artifacts");
+}
+if (!/actions\/upload-artifact@[0-9a-f]{40}/.test(releaseCandidateJob)) {
+  throw new Error("CI release-candidate audit must retain its audited local artifacts");
+}
+
+const dependencyAudit = workflow.match(/\n  dependency-audit:\n([\s\S]*?)(?=\n  [a-z][\w-]*:|$)/);
+if (dependencyAudit === null || !/pnpm audit:dependencies/.test(dependencyAudit[1] ?? "")) {
+  throw new Error("CI is missing the required dependency advisory audit");
+}
+
 console.log(
   "workflow pinning, Chromium integration, executable corpus, invariants, Promptfoo, benchmark, and property/fuzz checks passed",
 );

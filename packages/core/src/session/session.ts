@@ -38,6 +38,9 @@ import { DEFAULT_DESTINATION_RULES } from "../network/destination.js";
 import { correlateNetworkMutation } from "../network/correlate.js";
 import { evaluateNetworkMutation } from "../network/evaluate.js";
 import type { SessionVault } from "../secrets/vault-adapter.js";
+import { createVaultExecutorAccess, type VaultExecutorAccess } from "../secrets/vault-access.js";
+import { createUnsafeAdapterAccess } from "../adapter/raw-access.js";
+import { STAGEHAND_EXECUTION, type ExactActionExecutor } from "../internal.js";
 import type { PolicyEngine } from "../policy/engine.js";
 import {
   SessionBudgetLedger,
@@ -128,6 +131,8 @@ export interface SecuritySessionInit {
   readonly limits: ResourceLimits;
   readonly guardModel?: GuardModelProvider;
   readonly vault?: SessionVault;
+  /** @internal Session-private capability supplied by `OpenAgentFence`. */
+  readonly vaultAccess?: VaultExecutorAccess;
   readonly approvalHandler?: ApprovalHandler;
   readonly trace: TraceWriter;
   readonly clock?: SessionClock;
@@ -154,16 +159,6 @@ export interface BoundAuthorizationResult {
  */
 export interface TrustedInstructionOptions {
   readonly instructedBy?: "user";
-}
-
-/**
- * Narrow bridge for adapters which have an exact structured executor but do
- * not implement the browser event contract. The callback receives no raw
- * action and is invoked only after core has atomically consumed a
- * session-issued authorization.
- */
-export interface ExactActionExecutor {
-  execute(): Promise<unknown>;
 }
 
 /** Session-owned limits for one bounded guard-provider dispatch. */
@@ -205,6 +200,8 @@ export class SecuritySession {
   private readonly limits: ResourceLimits;
   private readonly guardModel: GuardModelProvider | undefined;
   private readonly vault: SessionVault | undefined;
+  private readonly vaultAccess: VaultExecutorAccess | undefined;
+  private readonly rawAdapterAccess = createUnsafeAdapterAccess();
   private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly trace: TraceWriter;
   private readonly budgets: SessionBudgetLedger;
@@ -248,8 +245,14 @@ export class SecuritySession {
     this.limits = init.limits;
     this.guardModel = init.guardModel;
     this.vault = init.vault;
+    this.vaultAccess = init.vaultAccess;
     this.approvalHandler = init.approvalHandler;
     this.trace = init.trace;
+    Object.defineProperty(this, STAGEHAND_EXECUTION, {
+      enumerable: false,
+      value: (authorized: Authorized, executor: ExactActionExecutor) =>
+        this.executeIssuedAuthorization(authorized, () => executor.execute(), "unavailable"),
+    });
     this.clock = init.clock ?? systemSessionClock;
     this.budgets = new SessionBudgetLedger(init.contract.budgets, this.clock.now(), this.clock);
     this.sourceSinkCheck = createSourceSinkCheck({
@@ -1001,19 +1004,6 @@ export class SecuritySession {
     });
   }
 
-  /**
-   * Consume a state-bound authorization through a framework-owned exact
-   * executor which lacks BrowserAdapter event hooks (currently Stagehand).
-   * Such executions are recorded as post-action observation unavailable and
-   * therefore cannot establish a clean post-action state.
-   */
-  async executeAuthorizedWith(
-    authorized: Authorized,
-    executor: ExactActionExecutor,
-  ): Promise<unknown> {
-    return this.executeIssuedAuthorization(authorized, () => executor.execute(), "unavailable");
-  }
-
   private async executeIssuedAuthorization(
     authorized: Authorized,
     execute: (issuedState: string) => Promise<unknown>,
@@ -1198,6 +1188,7 @@ export class SecuritySession {
     const adapter = this.adapter;
     const trace = this.trace;
     const redactor = this.redactor;
+    const rawAdapterAccess = this.rawAdapterAccess;
     return {
       rawPage(reason: string): unknown {
         if (typeof reason !== "string" || reason.trim().length === 0) {
@@ -1206,7 +1197,7 @@ export class SecuritySession {
         // Recorded before raw-handle access (INV-18), with the caller reason
         // redacted so a secret-bearing reason never reaches the trace.
         trace.append("escape_hatch", { reason: redactor.redact(reason) });
-        return adapter.rawPage(reason);
+        return adapter.rawPage(rawAdapterAccess);
       },
     };
   }
@@ -1773,7 +1764,7 @@ export class SecuritySession {
       authorized,
       bindings: this.contract.secrets ?? [],
       envelope: this.envelope,
-      lookup: this.vault.createExecutorLookup(),
+      lookup: this.vault.createExecutorLookup(this.vaultAccess ?? createVaultExecutorAccess()),
       restrictedMode: this.policy.secretResolution?.restrictedMode ?? "keep_approved_sinks",
       currentState: () => ({
         riskState: this.risk,

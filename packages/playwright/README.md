@@ -31,6 +31,10 @@ Playwright; all Playwright-specific behavior stays in this package (ADR-0002).
   Other execution paths are absent from the secure surface; raw page access
   remains the recorded escape hatch.
 
+  `adapter.rawPage()` itself requires an unforgeable session capability. Use
+  `session.unsafe.rawPage(reason)` instead; it writes the required
+  `escape_hatch` trace event before returning the underlying page.
+
   Action data is a `ProvenancedDatum`: application-owned instruction data stays
   application-labelled, while form metadata or other DOM-derived components
   make the enclosing datum web-labelled. Upload declarations preserve the
@@ -100,7 +104,8 @@ Popup events are post-creation only. The shared session consumes the tab budget
 and evaluates an observable popup URL against the navigation envelope; the
 adapter closes the popup immediately on an exhausted budget or disallowed URL.
 This does not claim pre-navigation or zero-byte popup containment, does not
-expose a secure child-page wrapper, and leaves taint propagation to PS-013.
+expose a secure child-page wrapper, and preserves the existing shared-session
+taint/risk state.
 
 Secret handles are supported as a whole value for guarded `fill`, `type`, and
 `selectOption`. After exact live target revalidation, the adapter infers the
@@ -120,5 +125,7 @@ cannot abort a download response after headers, so this is a pre-exposure
 boundary, not a claim of network-level download interception. Script evaluation,
 context/page creation, and close paths are not exposed by the secure wrapper.
 
-**Status: not yet published.** No API is stable; see the
+**Status: experimental through v0.3.** No API is stable; see the
 [implementation plan](../../docs/IMPLEMENTATION_PLAN.md).
+Every package-root export is experimental through v0.3; see the
+[v0.1 API stability ledger](../../docs/api-stability.md).

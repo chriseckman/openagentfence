@@ -17,7 +17,7 @@ import {
   type BenchmarkOutcomes,
 } from "./metrics.js";
 
-export const BENCHMARK_SCHEMA_VERSION = "1.0.0";
+export const BENCHMARK_SCHEMA_VERSION = "1.1.0";
 export const BENCHMARK_LIMITS = Object.freeze({
   maxCases: 4_096,
   maxCaseDurationMs: 60_000,
@@ -55,6 +55,21 @@ export interface BenchmarkModelPin extends BenchmarkComponentPin {
   readonly model: string;
 }
 
+/** Bounded runner facts required to reproduce a published measurement. */
+export interface BenchmarkEnvironmentPin {
+  readonly runnerClass: string;
+  readonly operatingSystem: string;
+  readonly nodeVersion: string;
+  readonly cpuCount: number;
+}
+
+/** The current paired runner executes exactly one un-warmed sample per arm. */
+export interface BenchmarkExecutionPin {
+  readonly repetitions: number;
+  readonly warmupIterations: number;
+  readonly armOrder: string;
+}
+
 export interface BenchmarkPinnedMetadata {
   readonly corpusHash: string;
   readonly corpusSchemaVersion: string;
@@ -63,6 +78,8 @@ export interface BenchmarkPinnedMetadata {
   readonly browser: BenchmarkComponentPin;
   readonly primaryAgent: BenchmarkModelPin;
   readonly guardProviders: readonly BenchmarkModelPin[];
+  readonly environment: BenchmarkEnvironmentPin;
+  readonly execution: BenchmarkExecutionPin;
   readonly runnerVersion: string;
 }
 
@@ -335,6 +352,23 @@ function validateRunOptions(options: RunBenchmarkOptions): void {
   }
   if (!boundedIdentifier(options.metadata.runnerVersion)) {
     throw new TypeError("benchmark runner version is invalid");
+  }
+  const environment = options.metadata.environment;
+  if (
+    !boundedIdentifier(environment.runnerClass) ||
+    !boundedIdentifier(environment.operatingSystem) ||
+    !exactVersion(environment.nodeVersion) ||
+    !integerBetween(environment.cpuCount, 1, 4_096)
+  ) {
+    throw new TypeError("benchmark environment pin is invalid");
+  }
+  const execution = options.metadata.execution;
+  if (
+    execution.repetitions !== 1 ||
+    execution.warmupIterations !== 0 ||
+    execution.armOrder !== "unguarded_then_guarded"
+  ) {
+    throw new TypeError("benchmark runner supports exactly one un-warmed paired sample");
   }
 }
 

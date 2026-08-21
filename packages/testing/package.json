@@ -4,6 +4,15 @@
   "description": "Fixture server, corpus loader, benchmark runner, and assertions.",
   "type": "module",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chriseckman/openagentfence.git",
+    "directory": "packages/testing"
+  },
+  "bugs": {
+    "url": "https://github.com/chriseckman/openagentfence/issues"
+  },
+  "homepage": "https://github.com/chriseckman/openagentfence#readme",
   "engines": {
     "node": ">=20"
   },
@@ -21,19 +30,21 @@
     "dist",
     "README.md",
     "src/schemas/corpus-case.schema.json",
-    "src/schemas/benchmark-report.schema.json"
+    "src/schemas/benchmark-report.schema.json",
+    "LICENSE",
+    "NOTICE"
   ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/build-package.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
     "test": "vitest run",
     "test:invariants": "vitest run test/invariants",
-    "benchmark:pr": "vitest run test/benchmark.test.ts",
+    "benchmark:pr": "vitest run test/benchmark.test.ts test/performance.test.ts",
     "test:integration": "vitest run --passWithNoTests test/integration"
   },
   "dependencies": {
@@ -44,6 +55,6 @@
   "devDependencies": {
     "eslint": "^9.15.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   }
 }

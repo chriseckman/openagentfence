@@ -13,7 +13,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === ".git") {
+    if (
+      entry.name === "node_modules" ||
+      entry.name === ".git" ||
+      entry.name === ".opencode" ||
+      entry.name === "dist" ||
+      entry.name === "coverage" ||
+      entry.name === "artifacts" ||
+      entry.name === ".turbo"
+    ) {
       continue;
     }
     const path = join(dir, entry.name);
@@ -27,12 +35,7 @@ function walk(dir, acc = []) {
 }
 
 const files = [];
-walk(join(ROOT, "docs"), files);
-for (const entry of readdirSync(ROOT)) {
-  if (extname(entry) === ".md") {
-    files.push(join(ROOT, entry));
-  }
-}
+walk(ROOT, files);
 
 function slugifyHeading(heading) {
   return (

@@ -22,9 +22,19 @@
     "api-report": "turbo run build && node scripts/api-report.mjs",
     "api-report:check": "turbo run build && node scripts/api-report.mjs --check",
     "check:deps": "node scripts/check-dependency-direction.mjs",
-    "check:workflow": "node scripts/check-workflow-pinning.mjs",
-    "promptfoo:check": "node scripts/check-promptfoo-example.mjs",
-    "docs:check": "node scripts/check-docs-links.mjs",
+    "check:workflow": "node scripts/check-workflow-pinning.mjs && node scripts/check-release-pipeline.mjs",
+    "legal:check": "node scripts/sync-package-legal.mjs",
+    "legal:sync": "node scripts/sync-package-legal.mjs --write",
+    "release:dry-run": "node scripts/sync-package-legal.mjs && node scripts/build-release-packages.mjs && node scripts/release-artifacts.mjs --out artifacts/release",
+    "release:candidate": "node scripts/prepare-release-candidate.mjs --version 0.1.0-rc.1 && node scripts/release-candidate-smoke.mjs --version 0.1.0-rc.1",
+    "release:smoke": "node scripts/release-candidate-smoke.mjs",
+    "test:release-artifacts": "node scripts/test-release-artifacts.mjs",
+    "audit:dependencies": "pnpm audit --json",
+    "test:promptfoo-env": "node scripts/test-promptfoo-offline-environment.mjs",
+    "promptfoo:check": "pnpm test:promptfoo-env && node scripts/check-promptfoo-example.mjs",
+    "examples:check": "pnpm exec tsc -p examples/tsconfig.json && pnpm build && node examples/quick-start/run.mjs",
+    "docs:api": "typedoc --options typedoc.json",
+    "docs:check": "node scripts/check-docs-links.mjs && node scripts/check-docs-contracts.mjs && pnpm docs:api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "changeset": "changeset",
@@ -46,8 +56,16 @@
     "prettier": "^3.4.1",
     "promptfoo": "0.122.0",
     "turbo": "^2.3.3",
+    "typedoc": "0.28.20",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.15.0",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
+  },
+  "pnpm": {
+    "overrides": {
+      "adm-zip": "0.6.0",
+      "sharp": "0.35.0",
+      "vite": "6.4.3"
+    }
   }
 }

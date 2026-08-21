@@ -18,16 +18,21 @@ the firewall as immutable `destinationRules`; they cannot widen a contract or
 disable the core private-network default.
 
 Scanner configuration may add bounded, data-only secret prefix patterns under
-`scanners.secret.patterns`. Each entry declares an inert literal prefix,
+`scanners.<id>.patterns`. Each entry declares an inert literal prefix,
 alphabet, minimum/maximum total length, and optional handle kind. The loader
 accepts at most 32 entries and rejects arbitrary regular expressions; provider
-credentials and secret values do not belong in policy.
+credentials and secret values do not belong in policy. Applications explicitly
+pass converted values to `defaultScanners({ secretPatterns })`; this package
+does not reconfigure the scanner catalog implicitly. See the complete
+[policy reference](../../docs/policy-reference.md).
 
 The sole direct parser dependency is `yaml@2.9.0`, pinned exactly under
 ADR-0012. It supports Node 20 and built-in TypeScript declarations; the loader
 uses strict parsing with string-key/duplicate-key checks, no aliases, no merge
 keys, no custom or explicit tags, and application-level byte/depth/node bounds.
 
-**Status: not yet published.** This package is part of the OpenAgentFence
+**Status: experimental through v0.3.** This package is part of the OpenAgentFence
 v0.1 plan ([implementation plan](../../docs/IMPLEMENTATION_PLAN.md)); no API
 is stable and nothing here is production-ready.
+Every package-root export is experimental through v0.3; see the
+[v0.1 API stability ledger](../../docs/api-stability.md).

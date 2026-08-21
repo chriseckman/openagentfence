@@ -4,6 +4,7 @@ import type { PolicyEngine } from "../policy/engine.js";
 import { secureDefaultPolicyEngine } from "../policy/secure-default-engine.js";
 import type { GuardModelProvider } from "../guard/provider.js";
 import type { VaultAdapter } from "../secrets/vault-adapter.js";
+import { createVaultExecutorAccess } from "../secrets/vault-access.js";
 import type { SecurityScanner } from "../scanner/scanner.js";
 import { ScannerRegistry } from "../orchestrator/registry.js";
 import { RedactionRegistry } from "../trace/redact.js";
@@ -59,10 +60,6 @@ export class OpenAgentFence {
     }
   }
 
-  get scanners(): ScannerRegistry {
-    return this.registry;
-  }
-
   /**
    * Start a session for a task. The contract is schema-validated at the trust
    * boundary (TB1), compiled into a secure-default-constrained envelope, and
@@ -94,6 +91,7 @@ export class OpenAgentFence {
     for (const scanner of this.registry.all()) {
       sessionRegistry.register(scanner);
     }
+    const vaultAccess = this.vault === undefined ? undefined : createVaultExecutorAccess();
     const session = new SecuritySession({
       id,
       adapter: this.adapter,
@@ -104,7 +102,9 @@ export class OpenAgentFence {
       redactor,
       limits: this.limits,
       ...(this.guardModel !== undefined ? { guardModel: this.guardModel } : {}),
-      ...(this.vault !== undefined ? { vault: this.vault.openSession(id) } : {}),
+      ...(this.vault !== undefined && vaultAccess !== undefined
+        ? { vault: this.vault.openSession(id, vaultAccess), vaultAccess }
+        : {}),
       ...(this.approvalHandler !== undefined ? { approvalHandler: this.approvalHandler } : {}),
       trace,
     });

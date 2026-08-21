@@ -197,7 +197,7 @@ jobs:
       - run: pnpm test:invariants
 
   benchmark-smoke:
-    name: Reproducible benchmark smoke
+    name: Reproducible benchmark and control-performance smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -219,14 +219,56 @@ jobs:
           if-no-files-found: error
 
   docs:
-    name: Docs link check
+    name: Documentation and examples
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
-      - run: node scripts/check-docs-links.mjs
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm docs:check
+      - run: pnpm examples:check
+
+  release-candidate:
+    name: Release candidate artifact audit (Node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:candidate
+      - run: pnpm test:release-artifacts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: local-release-candidate-artifacts
+          path: artifacts/release
+          if-no-files-found: error
+
+  dependency-audit:
+    name: Dependency advisory audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit:dependencies
 
   commitlint:
     name: Conventional commits
@@ -262,7 +304,7 @@ jobs:
           else
             range="HEAD~1..HEAD"
           fi
-          commits=$(git rev-list --no-merges "$range" || true)
+          commits=$(git rev-list --no-merges "$range")
           if [ -z "$commits" ]; then
             echo "No commits to check."
             exit 0

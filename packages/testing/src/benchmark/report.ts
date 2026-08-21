@@ -155,7 +155,8 @@ export function benchmarkReportMarkdown(report: BenchmarkReport): string {
     `- Browser: ${pin(report.metadata.browser)}`,
     `- Primary agent: ${pin(report.metadata.primaryAgent)}`,
     `- Guard providers: ${report.metadata.guardProviders.map(pin).join(", ")}`,
-    `- Runner: \`${report.metadata.runnerVersion}\`; seed: \`${report.seed}\`; profile: \`${report.profile.name}\``,
+    `- Runner: \`${report.metadata.runnerVersion}\` on ${report.metadata.environment.runnerClass} / ${report.metadata.environment.operatingSystem} / Node \`${report.metadata.environment.nodeVersion}\` / ${report.metadata.environment.cpuCount} CPUs; seed: \`${report.seed}\`; profile: \`${report.profile.name}\``,
+    `- Execution: ${report.metadata.execution.repetitions} paired repetition, ${report.metadata.execution.warmupIterations} warm-ups, ${report.metadata.execution.armOrder}.`,
     "",
     "| Metric (numerator event) | Unguarded | Guarded |",
     "| --- | ---: | ---: |",
@@ -183,6 +184,8 @@ function validateMetadata(value: unknown): BenchmarkPinnedMetadata | null {
     "browser",
     "primaryAgent",
     "guardProviders",
+    "environment",
+    "execution",
     "runnerVersion",
   ]);
   if (
@@ -190,7 +193,9 @@ function validateMetadata(value: unknown): BenchmarkPinnedMetadata | null {
     !hexHash(metadata["corpusHash"]) ||
     !hexHash(metadata["policyHash"]) ||
     !safeText(metadata["corpusSchemaVersion"], 64) ||
-    !safeText(metadata["runnerVersion"], 256)
+    !safeText(metadata["runnerVersion"], 256) ||
+    !validateEnvironment(metadata["environment"]) ||
+    !validateExecution(metadata["execution"])
   )
     return null;
   for (const key of ["framework", "browser", "primaryAgent"] as const) {
@@ -224,6 +229,27 @@ function validateMetadata(value: unknown): BenchmarkPinnedMetadata | null {
       return null;
   }
   return value as BenchmarkPinnedMetadata;
+}
+
+function validateEnvironment(value: unknown): boolean {
+  const environment = record(value, ["runnerClass", "operatingSystem", "nodeVersion", "cpuCount"]);
+  return (
+    environment !== null &&
+    safeText(environment["runnerClass"], 256) &&
+    safeText(environment["operatingSystem"], 256) &&
+    exactVersion(environment["nodeVersion"]) &&
+    uint(environment["cpuCount"], 4_096, 1)
+  );
+}
+
+function validateExecution(value: unknown): boolean {
+  const execution = record(value, ["repetitions", "warmupIterations", "armOrder"]);
+  return (
+    execution !== null &&
+    execution["repetitions"] === 1 &&
+    execution["warmupIterations"] === 0 &&
+    execution["armOrder"] === "unguarded_then_guarded"
+  );
 }
 
 function validateMeasurement(

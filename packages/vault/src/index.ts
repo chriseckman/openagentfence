@@ -1,17 +1,19 @@
 import {
-  mintHandle,
+  isVaultExecutorAccess,
   serializeHandle,
   type ExecutorSecretLookup,
   type SecretHandle,
   type SecretHandleKind,
   type SessionVault,
   type VaultAdapter,
+  type VaultExecutorAccess,
 } from "@openagentfence/core";
+import { randomBytes } from "node:crypto";
 
-/** The package name of this library. @public */
+/** Experimental reference-vault package metadata. @experimental */
 export const PACKAGE_NAME = "@openagentfence/vault";
 
-/** Bounded configuration for the non-persistent reference vault. @public */
+/** Bounded configuration for the non-persistent experimental reference vault. @experimental */
 export interface InMemoryVaultOptions {
   readonly maxEntriesPerSession?: number;
   readonly maxValueBytes?: number;
@@ -46,12 +48,14 @@ export function inMemoryVault(options: InMemoryVaultOptions = {}): VaultAdapter 
 
   const sessions = new Map<string, InMemorySessionVault>();
   return {
-    openSession(sessionId: string): SessionVault {
+    openSession(sessionId: string, access: VaultExecutorAccess): SessionVault {
+      if (!isVaultExecutorAccess(access)) throw new TypeError("vault session access denied");
       if (!/^[a-f0-9]{16}$/.test(sessionId)) throw new TypeError("invalid session id");
       const existing = sessions.get(sessionId);
       if (existing !== undefined) return existing;
       const session = new InMemorySessionVault(
         sessionId,
+        access,
         maxEntries,
         maxValueBytes,
         ttlMs,
@@ -72,6 +76,7 @@ class InMemorySessionVault implements SessionVault {
 
   constructor(
     private readonly sessionId: string,
+    private readonly access: VaultExecutorAccess,
     private readonly maxEntries: number,
     private readonly maxValueBytes: number,
     private readonly ttlMs: number,
@@ -101,7 +106,10 @@ class InMemorySessionVault implements SessionVault {
     return handle;
   }
 
-  createExecutorLookup(): ExecutorSecretLookup {
+  createExecutorLookup(access: VaultExecutorAccess): ExecutorSecretLookup {
+    if (access !== this.access || !isVaultExecutorAccess(access)) {
+      throw new TypeError("vault executor access denied");
+    }
     return {
       lookup: async (handle: SecretHandle, signal?: AbortSignal): Promise<string | null> => {
         if (signal?.aborted === true || this.invalidated) return null;
@@ -126,4 +134,11 @@ class InMemorySessionVault implements SessionVault {
   private requireActive(): void {
     if (this.invalidated) throw new Error(`vault session ${this.sessionId} is no longer active`);
   }
+}
+
+function mintHandle(kind: SecretHandleKind, name: string): SecretHandle {
+  if (!/^[A-Za-z0-9_.-]{1,96}$/.test(name)) {
+    throw new TypeError("secret handle name must use up to 96 letters, digits, '.', '_' or '-'");
+  }
+  return { kind, name, id: randomBytes(16).toString("hex") };
 }

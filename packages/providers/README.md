@@ -5,7 +5,7 @@ factory. Provider selection, endpoints, models, and credentials stay in
 application setup; policy and `@openagentfence/core` receive only the returned
 provider instance.
 
-**Status: not yet published.** This package is part of the OpenAgentFence
+**Status: experimental through v0.3.** This package is part of the OpenAgentFence
 v0.1 plan ([implementation plan](../../docs/IMPLEMENTATION_PLAN.md)); APIs are
 experimental and nothing here is production-ready.
 
@@ -80,8 +80,9 @@ authentication. It uses `POST /api/chat`, a JSON Schema in `format`, and
 `stream: false`; `done: false`, error objects, or NDJSON fail closed. Install
 Ollama and explicitly install/select a model in application setup before using
 the provider. Ollama is OpenAgentFence's local-first provider mode, but no
-particular model is recommended and no performance claim is made until the
-later reproducible security-corpus benchmark required by A-01.
+particular model is recommended. The current local control measurement contains
+no Ollama model or provider-efficacy claim; see
+[benchmarks](../../docs/benchmarks.md).
 
 The loopback transport reports `makesExternalCalls: false`. This describes the
 OpenAgentFence-to-daemon hop only: an Ollama daemon can itself be configured to
@@ -159,3 +160,6 @@ was verified on 2026-08-19 from the official
 [xAI Responses comparison](https://docs.x.ai/developers/model-capabilities/text/comparison),
 and [xAI Structured Outputs](https://docs.x.ai/developers/model-capabilities/text/structured-outputs)
 documentation.
+
+Every package-root export is experimental through v0.3; see the
+[v0.1 API stability ledger](../../docs/api-stability.md).

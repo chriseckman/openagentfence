@@ -936,7 +936,7 @@ checks) and the PRE_ACTION/POST_ACTION scanners in `scanners`.
 - Objective: Implement the risk accumulator with policy-configurable weights and the monotonic state machine `NORMAL -> RESTRICTED -> READ_ONLY -> QUARANTINED`, its effects on the envelope (`narrow`), `riskChanged` events, and quarantine release by the application (PRD §13.11; ARCHITECTURE §12). **Q8 and Q11 are resolved in PRD v0.7 §13.11 / ARCHITECTURE §12** — implement those defaults and action sets exactly.
 - Dependencies: OAF-CORE-007, OAF-CORE-009
 - Files/packages affected: `packages/core/src/risk/{engine,state-machine,weights}.ts`, ARCHITECTURE Q8/Q11 updates, `docs/policies.md` risk section.
-- Implementation notes: **Minimal form for the vertical slice**: high-severity injection finding → `RESTRICTED`. Full form: default weights hidden injection +40, cross-origin redirect +20, secret requested +50, unrelated new tab +30; thresholds `RESTRICTED` ≥ 40, `READ_ONLY` ≥ 80, `QUARANTINED` ≥ 120; `injection.high_confidence: restricted_mode` and `injection.critical: quarantine` apply regardless of score; all profile-overridable. State effects: `RESTRICTED` disables uploads, cross-origin navigation, external communication, new secret sink authorizations (previously approved per policy — Q6, finalised in OAF-DATA-003), side effects require approval; `RESTRICTED` allows `READ`, `SCROLL`, same-site `NAVIGATE`, same-origin `CLICK`/`TYPE`/`FILL` without secrets, contract `DOWNLOAD`; `READ_ONLY` allows only `READ`, `SCROLL`, and same-site link `NAVIGATE` (no forms, typing, or secrets); `QUARANTINED` blocks all side effects. Navigation never resets risk; P1 decay/reset hooks are typed but unimplemented.
+- Implementation notes: **Minimal form for the vertical slice**: high-severity injection finding → `RESTRICTED`. Full form: default weights hidden injection +40, cross-origin redirect +20, secret requested +50, unrelated new tab +30; thresholds `RESTRICTED` ≥ 40, `READ_ONLY` ≥ 80, `QUARANTINED` ≥ 120; `injection.high_confidence: restricted_mode` and `injection.critical: quarantine` apply regardless of score. The v0.1 values are firewall-owned; P1 profile customization is unavailable. State effects: `RESTRICTED` disables uploads, cross-origin navigation, external communication, new secret sink authorizations (previously approved per policy — Q6, finalised in OAF-DATA-003), side effects require approval; `RESTRICTED` allows `READ`, `SCROLL`, same-site `NAVIGATE`, same-origin `CLICK`/`TYPE`/`FILL` without secrets, contract `DOWNLOAD`; `READ_ONLY` allows only `READ`, `SCROLL`, and same-site link `NAVIGATE` (no forms, typing, or secrets); `QUARANTINED` blocks all side effects. Navigation never resets risk; P1 decay/reset hooks are typed but unimplemented.
 - Acceptance criteria: Transitions are monotonic under any event sequence (property test); each transition emits `riskChanged` with the triggering finding; a popup created after `RESTRICTED` starts `RESTRICTED`; defaults match PRD v0.7 §13.11.
 - Tests required: state-machine property tests; weight table tests; integration with OAF-BROWSER-012.
 - Security considerations: INV-12, INV-14; A1 containment (THREAT_MODEL §5.1 E1/E4, §5.5 E2).
@@ -1631,7 +1631,7 @@ surfaces.
 - Definition of done: Standard DoD.
 
 ### OAF-REL-004 — CLI: `init`, `doctor`, `explain`, `policy validate`   (P0)
-- Objective: `init` scaffolds `openagentfence.yml` from a profile; `doctor` checks environment (Node, Playwright/Stagehand versions and peer ranges, provider connectivity, adapter capability flags/enforcement gaps, Q4 disabled-path table); `explain trace.json` renders the decision chain (`decidedBy`, reasons, evidence refs); `policy validate` wraps OAF-POLICY-003 (PRD §18.3).
+- Objective: `init` scaffolds an explicit secure-default `openagentfence.yml` (P1 profiles are unavailable); `doctor` checks environment (Node, Playwright version and peer range, explicitly requested provider connectivity, adapter capability flags/enforcement gaps); `explain trace.json` renders the decision chain (reasons and evidence refs); `policy validate` wraps OAF-POLICY-003 (PRD §18.3). Stagehand remains a separate capability ledger rather than a CLI-inspected runtime.
 - Dependencies: OAF-POLICY-003, OAF-CORE-010, OAF-BROWSER-004, OAF-TEST-012
 - Files/packages affected: `packages/cli/src/commands/{init,doctor,explain,policy-validate}.ts`, `packages/cli/src/index.ts`.
 - Implementation notes: No security logic and no telemetry in `cli` (ARCHITECTURE §3); `doctor` bypass-pattern detection in project code is P1 (OAF-REL-005). Output is plain text/JSON; exit codes documented.
@@ -1653,10 +1653,10 @@ surfaces.
 ### OAF-REL-006 — Package publishing: trusted publishing, provenance, SBOM, signed tags   (P0)
 - Objective: `release.yml` publishing all `@openagentfence/*` packages only from CI via npm trusted publishing (OIDC) with `--provenance`, generating a CycloneDX SBOM per release attached to the GitHub release, signed git tags, and Changesets-driven versioning (PRD §21, §29.6).
 - Dependencies: OAF-REPO-003, OAF-REL-002
-- Files/packages affected: `.github/workflows/release.yml`, `.changeset/`, `package.json` `publishConfig`, `docs/release-process.md`.
+- Files/packages affected: `.github/workflows/release.yml`, `.changeset/`, package `publishConfig`/`files`/exports metadata, `docs/release-pipeline.md`.
 - Implementation notes: No maintainer-laptop publishes; SHA-pinned actions; least-privilege token with `id-token: write` only in the publish job; dry-run mode for RCs; `files`/`exports` audited so tests/fixtures are not published.
-- Acceptance criteria: A dry-run release from a tag produces provenance-attested tarballs and an SBOM artifact; `npm view` after a real RC shows provenance.
-- Tests required: release dry-run in CI on `main`.
+- Acceptance criteria: A local/CI dry run produces audited tarballs and a CycloneDX SBOM without external mutation. An authorized protected-environment publish then produces provenance-attested tarballs; `npm view` after a real RC verifies provenance.
+- Tests required: local release dry-run and release-workflow static validation; protected-environment remote verification only after authorization.
 - Security considerations: PRD §21 P0 supply-chain items; §32 supply-chain metrics.
 - Definition of done: Standard DoD; plus SECURITY.md release verification section.
 

@@ -6,6 +6,7 @@ import type { NetworkMutation } from "../network/mutation.js";
 import type { NetworkGuardDecision } from "../network/decision.js";
 import type { EgressInspection } from "../egress/inspect.js";
 import type { EgressPayload } from "../egress/payload.js";
+import type { UnsafeAdapterAccess } from "./raw-access.js";
 
 export interface AdapterEventSink {
   onNavigation(event: AdapterEvent): void;
@@ -57,6 +58,6 @@ export interface BrowserAdapter {
   /** Attach events to a firewall-owned session identity and return a disposer. */
   subscribe(sessionId: string, sink: AdapterEventSink): () => void;
 
-  /** Raw framework handle, reachable only via the recorded escape hatch. */
-  rawPage(reason: string): unknown;
+  /** Raw framework handle, reachable only via the recorded session escape hatch. */
+  rawPage(access: UnsafeAdapterAccess): unknown;
 }

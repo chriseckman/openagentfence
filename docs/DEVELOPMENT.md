@@ -29,22 +29,27 @@ pnpm build            # type-check + emit dist/ and .d.ts for every package
 ## Validation pipeline (in order)
 
 ```text
-pnpm lint             # ESLint (strict, type-aware) + dependency-direction check
+pnpm lint             # ESLint (strict, type-aware) + dependency/workflow checks
 pnpm typecheck        # tsc --noEmit across all packages (turbo builds deps first)
 pnpm test             # Vitest unit tests (core/policy/vault include coverage gate)
 pnpm test:property    # seeded 1,000-run security properties and decoder/policy fuzzing
 pnpm test:integration # local Playwright integration and fixture/corpus smoke tests
+pnpm test:corpus      # shipped loopback-only Playwright corpus CLI
+pnpm test:invariants  # INV-01 through INV-21 and removal-sensitive coverage registry
+pnpm benchmark:pr     # bounded offline control-measurement regression check
 pnpm promptfoo:check  # Node >=22.22: offline Promptfoo config + local-provider eval
+pnpm audit:dependencies # fail on any dependency advisory
 pnpm api-report       # regenerate API report baselines (etc/*.api.md)
-pnpm docs:check       # relative Markdown link check
+pnpm docs:check       # Markdown links, docs/source tables, and TypeDoc build
+pnpm examples:check   # compile and run the no-network secure quick start
 pnpm format:check     # Prettier check
 ```
 
-`pnpm lint` includes `pnpm check:deps`, which enforces the dependency-direction
-rules below from both declared `package.json` dependencies and source imports.
-The Promptfoo example is a root-only development tool and is not a dependency
-of any published package. Its dedicated CI job uses Node 24; the package
-workspace continues to support the root Node 20 floor.
+`pnpm lint` includes `pnpm check:deps` and `pnpm check:workflow`, which enforce
+the dependency-direction and workflow-pinning rules below. The Promptfoo example
+requires Node 22.22 or newer; repository CI uses Node 24 for that separate job.
+It is a root-only development tool and is not a dependency of any published
+package. The package workspace continues to support the root Node 20 floor.
 
 ## Property and fuzz tests
 
@@ -75,7 +80,7 @@ the leaf (see [ARCHITECTURE.md §3](ARCHITECTURE.md)). The map enforced by
 | `playwright` | `core` |
 | `stagehand` | `core`, `playwright` |
 | `testing` | `core`, `scanners`, `policy` |
-| `cli` | `core`, `policy`, `scanners`, `testing`, `providers`, `vault` |
+| `cli` | `core`, `policy`, `scanners`, `testing`, `providers`, `vault`, `playwright` (bounded corpus/diagnostic composition only; ADR-0018) |
 
 Rules: `core` never imports another `@openagentfence/*` package; adapters
 (`playwright`, `stagehand`) never import `scanners` or `policy`; nothing imports
@@ -86,5 +91,6 @@ Rules: `core` never imports another `@openagentfence/*` package; adapters
 
 Each package is an ESM package with a `src/index.ts` entry point, a
 `test/smoke.test.ts`, and (for `core`, `policy`, `vault`) a coverage-gated
-Vitest config. Packages publish under `@openagentfence/*`; none are published
-yet.
+Vitest config. Packages are prepared for public publication under
+`@openagentfence/*`; verify the current npm publication state through the
+[v0.1 release checklist](release-checklist-v0.1.md) rather than inferring it.

@@ -19,7 +19,7 @@
     "reportHash"
   ],
   "properties": {
-    "schemaVersion": { "const": "1.0.0" },
+    "schemaVersion": { "const": "1.1.0" },
     "runId": { "$ref": "#/$defs/safeText" },
     "generatedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
     "profile": {
@@ -45,6 +45,8 @@
         "browser",
         "primaryAgent",
         "guardProviders",
+        "environment",
+        "execution",
         "runnerVersion"
       ],
       "properties": {
@@ -60,6 +62,8 @@
           "maxItems": 8,
           "items": { "$ref": "#/$defs/modelComponent" }
         },
+        "environment": { "$ref": "#/$defs/environment" },
+        "execution": { "$ref": "#/$defs/execution" },
         "runnerVersion": { "$ref": "#/$defs/safeText" }
       }
     },
@@ -132,6 +136,27 @@
         "name": { "$ref": "#/$defs/safeText" },
         "version": { "$ref": "#/$defs/version" },
         "model": { "$ref": "#/$defs/safeText" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runnerClass", "operatingSystem", "nodeVersion", "cpuCount"],
+      "properties": {
+        "runnerClass": { "$ref": "#/$defs/safeText" },
+        "operatingSystem": { "$ref": "#/$defs/safeText" },
+        "nodeVersion": { "$ref": "#/$defs/version" },
+        "cpuCount": { "type": "integer", "minimum": 1, "maximum": 4096 }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repetitions", "warmupIterations", "armOrder"],
+      "properties": {
+        "repetitions": { "const": 1 },
+        "warmupIterations": { "const": 0 },
+        "armOrder": { "const": "unguarded_then_guarded" }
       }
     },
     "outcomeKey": {

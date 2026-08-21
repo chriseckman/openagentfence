@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { promptfooOfflineEnvironment } from "./promptfoo-offline-environment.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "openagentfence-promptfoo-"));
@@ -22,19 +23,10 @@ const promptfooPackage = JSON.parse(
 if (promptfooPackage.version !== "0.122.0") {
   throw new Error("Promptfoo example requires the pinned 0.122.0 development tool");
 }
-const env = {
-  ...process.env,
-  CI: "true",
-  FORCE_COLOR: "0",
-  PROMPTFOO_DISABLE_TELEMETRY: "1",
-  PROMPTFOO_DISABLE_UPDATE: "1",
-  PROMPTFOO_DISABLE_REMOTE_GENERATION: "true",
-  PROMPTFOO_DISABLE_SHARING: "1",
-  PROMPTFOO_SELF_HOSTED: "1",
-  PROMPTFOO_CACHE_ENABLED: "false",
-  PROMPTFOO_CONFIG_DIR: temporaryRoot,
-  PROMPTFOO_LOG_DIR: join(temporaryRoot, "logs"),
-};
+const env = promptfooOfflineEnvironment(process.env, {
+  configDirectory: temporaryRoot,
+  logDirectory: join(temporaryRoot, "logs"),
+});
 
 try {
   await mkdir(env.PROMPTFOO_LOG_DIR, { recursive: true });

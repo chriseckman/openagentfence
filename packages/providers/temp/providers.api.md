@@ -80,6 +80,4 @@ export const PACKAGE_NAME = "@openagentfence/providers";
 // @public
 export function xAIGuardProvider(options: GuardProviderOptions): GuardModelProvider;
 
-// (No @packageDocumentation comment for this package)
-
 ```

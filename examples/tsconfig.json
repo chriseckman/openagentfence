@@ -5,10 +5,17 @@
     "baseUrl": "..",
     "paths": {
       "@openagentfence/core": ["packages/core/src/index.ts"],
+      "@openagentfence/core/internal": ["packages/core/src/internal.ts"],
+      "@openagentfence/policy": ["packages/policy/src/index.ts"],
       "@openagentfence/scanners": ["packages/scanners/src/index.ts"],
       "@openagentfence/stagehand": ["packages/stagehand/src/index.ts"],
       "@openagentfence/testing": ["packages/testing/src/index.ts"]
     }
   },
-  "include": ["stagehand-local/**/*.ts", "screenshot-first/**/*.ts", "promptfoo/**/*.ts"]
+  "include": [
+    "quick-start/**/*.ts",
+    "stagehand-local/**/*.ts",
+    "screenshot-first/**/*.ts",
+    "promptfoo/**/*.ts"
+  ]
 }

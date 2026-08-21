@@ -1,6 +1,8 @@
 /**
- * The package name of this library.
- * @public
+ * @packageDocumentation
+ * Offline test support only; this experimental package is not a production
+ * runtime dependency.
+ * @experimental
  */
 export const PACKAGE_NAME = "@openagentfence/testing";
 
@@ -80,6 +82,8 @@ export {
 export type {
   BenchmarkComponentPin,
   BenchmarkModelPin,
+  BenchmarkEnvironmentPin,
+  BenchmarkExecutionPin,
   BenchmarkPinnedMetadata,
   BenchmarkProfile,
   BenchmarkCaseApplicability,

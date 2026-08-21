@@ -5,6 +5,7 @@
 ```ts
 
 import { BrowserAdapter } from '@openagentfence/core';
+import { BrowserAdapterCapabilities } from '@openagentfence/core';
 import { IntentStateSnapshot } from '@openagentfence/core';
 import { NetworkCapabilities } from '@openagentfence/core';
 import type { Page } from 'playwright';
@@ -13,6 +14,9 @@ import { SecuritySession } from '@openagentfence/core';
 
 // @public
 export function currentState(page: Page, observation: PageObservation, operation: PlaywrightOperation, policyHash: string): Promise<IntentStateSnapshot>;
+
+// @public
+export function describePlaywrightCapabilities(options?: Pick<PlaywrightAdapterOptions, "captureScreenshot" | "routeRequests">): BrowserAdapterCapabilities;
 
 // @public (undocumented)
 export interface DownloadMetadata {
@@ -155,7 +159,5 @@ export interface UploadOptions {
 
 // @public (undocumented)
 export function wrapPage(session: SecuritySession, page: Page, helpers?: PlaywrightHelperRegistry): SecurePage;
-
-// (No @packageDocumentation comment for this package)
 
 ```

@@ -144,6 +144,4 @@ export function wrapStagehand(session: SecuritySession, stagehand: StagehandLike
     }>;
 };
 
-// (No @packageDocumentation comment for this package)
-
 ```

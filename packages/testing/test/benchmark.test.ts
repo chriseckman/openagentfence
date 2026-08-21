@@ -93,6 +93,13 @@ const baseOptions: RunBenchmarkOptions = {
     browser: { name: "not-applicable", version: "not_applicable" },
     primaryAgent: { name: "scripted-agent", version: "1.0.0", model: "deterministic-script-v1" },
     guardProviders: [{ name: "fixture-guard", version: "1.0.0", model: "fixture-classifier-v1" }],
+    environment: {
+      runnerClass: "offline-scripted-fixture",
+      operatingSystem: "not_applicable",
+      nodeVersion: "not_applicable",
+      cpuCount: 1,
+    },
+    execution: { repetitions: 1, warmupIterations: 0, armOrder: "unguarded_then_guarded" },
     runnerVersion: "1.0.0",
   },
   profile:
@@ -210,6 +217,24 @@ describe("benchmark report boundary", () => {
         metadata: { ...baseOptions.metadata, framework: { name: "x", version: "latest" } },
       }),
     ).rejects.toThrow("pin");
+    await expect(
+      runBenchmark({
+        ...baseOptions,
+        metadata: {
+          ...baseOptions.metadata,
+          environment: { ...baseOptions.metadata.environment, cpuCount: 0 },
+        },
+      }),
+    ).rejects.toThrow("environment");
+    await expect(
+      runBenchmark({
+        ...baseOptions,
+        metadata: {
+          ...baseOptions.metadata,
+          execution: { ...baseOptions.metadata.execution, repetitions: 2 },
+        },
+      }),
+    ).rejects.toThrow("exactly one");
     const badAgent = createScriptedBenchmarkAgent({
       readPage: () => "<div></div>",
       execute: () => ({

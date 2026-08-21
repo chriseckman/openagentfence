@@ -8,7 +8,6 @@ import {
   isCrossOrigin,
   isHighImpact,
   isPrivateNetworkDestination,
-  mintHandle,
   originOf,
   sameOrigin,
   sameSite,
@@ -23,6 +22,7 @@ import {
   emptyPolicyRuntimeState,
   hash,
 } from "../src/index.js";
+import { mintHandle } from "../src/secrets/handle-codec.js";
 import type {
   GuardModelProvider,
   VaultAdapter,

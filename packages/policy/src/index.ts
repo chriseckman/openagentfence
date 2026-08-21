@@ -1,6 +1,7 @@
 /**
- * The package name of this library.
- * @public
+ * @packageDocumentation
+ * Application-owned policy APIs for the experimental v0.1 line.
+ * @experimental
  */
 export const PACKAGE_NAME = "@openagentfence/policy";
 

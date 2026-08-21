@@ -1,3 +1,10 @@
+/**
+ * @packageDocumentation
+ * Deterministic and optional semantic scanner catalog for the experimental
+ * v0.1 line. Scanner analysis output is evidence, never authorization.
+ * @experimental
+ */
+
 import type { SecurityScanner } from "@openagentfence/core";
 
 import { createHiddenDomScanner } from "./perception/hidden-dom/scanner.js";

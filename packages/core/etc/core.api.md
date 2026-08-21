@@ -228,7 +228,7 @@ export interface BrowserAdapter {
     executeAuthorized(action: Authorized, resolver: SecretResolver): Promise<unknown>;
     // (undocumented)
     observe(): Promise<PageObservation>;
-    rawPage(reason: string): unknown;
+    rawPage(access: UnsafeAdapterAccess): unknown;
     subscribe(sessionId: string, sink: AdapterEventSink): () => void;
 }
 
@@ -384,9 +384,6 @@ export function createPolicyRuntimeState(input: unknown): ValidatedPolicyRuntime
 
 // @public (undocumented)
 export function createRiskAggregator(): RiskAggregator;
-
-// @public
-export function createScopedSecretResolver(options: ScopedSecretResolverOptions): ScopedSecretResolver;
 
 // @public
 export function createSourceSinkCheck(options: SourceSinkCheckOptions): SourceSinkCheck;
@@ -722,12 +719,6 @@ export interface EvidenceReference {
 }
 
 // @public
-export interface ExactActionExecutor {
-    // (undocumented)
-    execute(): Promise<unknown>;
-}
-
-// @public
 export interface ExecutorSecretLookup {
     // (undocumented)
     lookup(handle: SecretHandle, signal?: AbortSignal): Promise<string | null>;
@@ -967,6 +958,9 @@ export function isSupportedNetworkScheme(href: string): boolean;
 export function isTrustedIntent(value: unknown): value is TrustedIntent;
 
 // @public
+export function isUnsafeAdapterAccess(value: unknown): value is UnsafeAdapterAccess;
+
+// @public
 export function isValidatedPolicyRuntimeState(value: unknown): value is ValidatedPolicyRuntimeState;
 
 // @public
@@ -974,6 +968,9 @@ export function isValidatedTaskContract(value: unknown): value is ValidatedTaskC
 
 // @public
 export function isValidInternalNetworkRange(range: string): boolean;
+
+// @public
+export function isVaultExecutorAccess(value: unknown): value is VaultExecutorAccess;
 
 // @public
 export function isWithinInternalNetworkRanges(href: string, ranges: readonly string[]): boolean;
@@ -1049,9 +1046,6 @@ export interface MemoryWriteResult {
     // (undocumented)
     readonly reasons: readonly MemoryGuardReason[];
 }
-
-// @public
-export function mintHandle(kind: SecretHandleKind, name: string): SecretHandle;
 
 // @public (undocumented)
 export interface ModelOutput {
@@ -1185,8 +1179,6 @@ export interface ObservationIdentity {
 // @public
 export class OpenAgentFence {
     constructor(options: OpenAgentFenceOptions);
-    // (undocumented)
-    get scanners(): ScannerRegistry;
     start(contractInput: unknown): SecuritySession;
 }
 
@@ -1963,36 +1955,6 @@ export interface ScopedContextView {
 }
 
 // @public
-export interface ScopedSecretResolver extends SecretResolver {
-    // (undocumented)
-    commit(): void;
-    // (undocumented)
-    revoke(): void;
-}
-
-// @public (undocumented)
-export interface ScopedSecretResolverOptions {
-    // (undocumented)
-    readonly approve: (sinkKey: string) => void;
-    // (undocumented)
-    readonly audit?: (attempt: SecretResolutionAudit) => void;
-    // (undocumented)
-    readonly authorized: Authorized;
-    // (undocumented)
-    readonly bindings: readonly SinkBinding[];
-    // (undocumented)
-    readonly currentState: () => ResolverSessionState;
-    // (undocumented)
-    readonly envelope: CapabilityEnvelope;
-    // (undocumented)
-    readonly lookup: ExecutorSecretLookup;
-    // (undocumented)
-    readonly restrictedMode?: "keep_approved_sinks" | "deny_all";
-    // (undocumented)
-    readonly wasApproved: (sinkKey: string) => boolean;
-}
-
-// @public
 export interface SecretBindingDecl {
     // (undocumented)
     readonly fieldTypes: readonly string[];
@@ -2117,7 +2079,6 @@ export class SecuritySession {
     // (undocumented)
     readonly envelope: CapabilityEnvelope;
     executeAuthorized(authorized: Authorized): Promise<unknown>;
-    executeAuthorizedWith(authorized: Authorized, executor: ExactActionExecutor): Promise<unknown>;
     // (undocumented)
     get guardProvider(): GuardModelProvider | undefined;
     // (undocumented)
@@ -2185,6 +2146,8 @@ export interface SecuritySessionInit {
     readonly trace: TraceWriter;
     // (undocumented)
     readonly vault?: SessionVault;
+    // @internal
+    readonly vaultAccess?: VaultExecutorAccess;
 }
 
 // @public (undocumented)
@@ -2289,8 +2252,7 @@ export interface SessionRisk {
 
 // @public
 export interface SessionVault {
-    // (undocumented)
-    createExecutorLookup(): ExecutorSecretLookup;
+    createExecutorLookup(access: VaultExecutorAccess): ExecutorSecretLookup;
     // (undocumented)
     invalidateSession(): Promise<void>;
     // (undocumented)
@@ -2607,6 +2569,12 @@ export interface UnsafeAccess {
 }
 
 // @public
+export interface UnsafeAdapterAccess {
+    // (undocumented)
+    readonly __openagentfenceUnsafeAdapterAccess: unique symbol;
+}
+
+// @public
 export interface UntrustedContent {
     // (undocumented)
     readonly content: string;
@@ -2703,8 +2671,13 @@ export type ValidationResult = {
 
 // @public
 export interface VaultAdapter {
+    openSession(sessionId: string, access: VaultExecutorAccess): SessionVault;
+}
+
+// @public
+export interface VaultExecutorAccess {
     // (undocumented)
-    openSession(sessionId: string): SessionVault;
+    readonly __openagentfenceVaultExecutorAccess: unique symbol;
 }
 
 // @public (undocumented)
@@ -2712,7 +2685,5 @@ export const WEB_PROVENANCE: DataProvenance;
 
 // @public
 export function wrapUntrustedContent(input: UntrustedContentInput): UntrustedContent;
-
-// (No @packageDocumentation comment for this package)
 
 ```

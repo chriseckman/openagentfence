@@ -10,6 +10,11 @@ a one-action resolver that checks the trusted sink binding, exact live intent,
 capability envelope, policy, and risk state before vault access. Browser
 substitution remains adapter-owned and occurs only at the final framework call.
 
-**Status: not yet published.** This package is part of the OpenAgentFence
+`SessionVault.createExecutorLookup()` requires a non-forgeable executor
+capability minted inside `@openagentfence/core`; applications must not call it
+or use this package as a secret-read API. The public status and extension
+boundary are recorded in the [v0.1 API stability ledger](../../docs/api-stability.md).
+
+**Status: experimental through v0.3.** This package is part of the OpenAgentFence
 v0.1 plan ([implementation plan](../../docs/IMPLEMENTATION_PLAN.md)); no API
 is stable and nothing here is production-ready.

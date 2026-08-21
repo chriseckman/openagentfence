@@ -42,10 +42,13 @@ validated and integrity-hashed; Markdown is rendered only from a valid report.
 Network mutation results retain initiator/surface/enforcement breakdowns, while
 actual token/cost fields remain unsupported unless a harness measures them.
 
-The offline `pnpm benchmark:pr` fixture is the bounded CI smoke run. Nightly
-and full profile ceilings are exported, but no project performance or model
-recommendation is published until the M8 measurement gate. See
-[benchmark definitions](../../docs/benchmarks.md).
+The offline `pnpm benchmark:pr` fixture is the bounded CI smoke run. It also
+replays every current fixture after snapshot, measures deterministic scan,
+high-impact authorization, and network-evaluator latency, and checks the
+benign Tier 2 invocation and hard-block populations. CI writes only bounded,
+value-free measurement metadata. The current pinned local result and its
+limitations are documented in [benchmark definitions](../../docs/benchmarks.md);
+no model recommendation is published.
 
 ## Local validation
 
@@ -57,7 +60,9 @@ pnpm benchmark:pr
 pnpm --filter @openagentfence/playwright test:integration
 ```
 
-This package is pre-release and is never imported by production runtime paths.
+This package is experimental through v0.3 and is never imported by production runtime paths.
+Every package-root export is experimental through v0.3; see the
+[v0.1 API stability ledger](../../docs/api-stability.md).
 ## Security invariant gate
 
 The package owns the 21-file INV-01 through INV-21 gate and the removal-sensitive

@@ -4,6 +4,15 @@
   "description": "openagentfence command-line interface.",
   "type": "module",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chriseckman/openagentfence.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/chriseckman/openagentfence/issues"
+  },
+  "homepage": "https://github.com/chriseckman/openagentfence#readme",
   "engines": {
     "node": ">=20"
   },
@@ -17,14 +26,16 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/build-package.mjs",
     "corpus:test": "node dist/bin.js test --corpus ../../security-corpus",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
@@ -44,7 +55,7 @@
     "eslint": "^9.15.0",
     "playwright": "^1.48.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   },
   "bin": {
     "openagentfence": "./dist/bin.js"

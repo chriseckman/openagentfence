@@ -5,6 +5,7 @@ import {
   compareIntentState,
   isAuthorizedAction,
   isIntentExpired,
+  isUnsafeAdapterAccess,
   validateNetworkMutation,
   validateProbeResult,
   type AdapterEventSink,
@@ -80,6 +81,18 @@ const PLAYWRIGHT_ROUTED_NETWORK_CAPABILITIES: NetworkCapabilities = Object.freez
   popup: "unavailable",
   webmcp: "unavailable",
 });
+
+/**
+ * Returns the exact static capability matrix for a prospective Playwright
+ * adapter configuration. This is diagnostic data only; it does not create a
+ * browser, subscribe to events, or claim enforcement for another adapter.
+ * @public
+ */
+export function describePlaywrightCapabilities(
+  options: Pick<PlaywrightAdapterOptions, "captureScreenshot" | "routeRequests"> = {},
+): BrowserAdapterCapabilities {
+  return capabilitiesFor(options);
+}
 
 /** Playwright observation/event adapter. All browser-derived output is TB2 web data. */
 export function playwrightAdapter(
@@ -380,7 +393,10 @@ export function playwrightAdapter(
         for (const detach of listeners) detach();
       };
     },
-    rawPage(): unknown {
+    rawPage(access): unknown {
+      if (!isUnsafeAdapterAccess(access)) {
+        throw new TypeError("playwright raw page access requires a recorded session capability");
+      }
       return page;
     },
   };
@@ -487,7 +503,9 @@ function safeRequestFrame(request: Request): Frame | null {
   }
 }
 const MAX_NETWORK_BODY_HASH_BYTES = 64 * 1024;
-function capabilitiesFor(options: PlaywrightAdapterOptions): BrowserAdapterCapabilities {
+function capabilitiesFor(
+  options: Pick<PlaywrightAdapterOptions, "captureScreenshot" | "routeRequests">,
+): BrowserAdapterCapabilities {
   return {
     route: options.routeRequests === true,
     network:

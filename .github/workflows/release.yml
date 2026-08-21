@@ -1,0 +1,121 @@
+name: Authorized package release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact release version already prepared by Changesets (for example, 0.1.0)
+        required: true
+        type: string
+      publish:
+        description:
+          Publish packages, create the signed tag, attest artifacts, and create the GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:workflow
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:integration
+      - run: pnpm test:corpus
+      - run: pnpm test:invariants
+      - run: pnpm test:property
+      - run: pnpm benchmark:pr
+      - run: pnpm promptfoo:check
+      - run: pnpm examples:check
+      - run: pnpm audit:dependencies
+      - run: pnpm api-report:check
+      - run: pnpm docs:check
+      - run: pnpm format:check
+      - run: pnpm release:dry-run
+      - run: pnpm exec changeset status --output artifacts/release/changeset-status.json
+      - run: node scripts/release-candidate-smoke.mjs --version "${{ inputs.version }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verified-release-artifacts
+          path: artifacts/release
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish and attest release
+    needs: verify
+    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:dry-run
+      - run:
+          node scripts/release-artifacts.mjs --out artifacts/release --require-publishable --version
+          "${{ inputs.version }}"
+      - name: Import isolated release signing key
+        env:
+          OAF_RELEASE_SIGNING_KEY: ${{ secrets.OAF_RELEASE_SIGNING_KEY }}
+          OAF_RELEASE_SIGNING_FINGERPRINT: ${{ vars.OAF_RELEASE_SIGNING_FINGERPRINT }}
+        run: |
+          test -n "$OAF_RELEASE_SIGNING_KEY"
+          test -n "$OAF_RELEASE_SIGNING_FINGERPRINT"
+          export GNUPGHOME="$RUNNER_TEMP/openagentfence-release-gpg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s' "$OAF_RELEASE_SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/release-key.asc"
+          gpg --batch --import "$RUNNER_TEMP/release-key.asc"
+          fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test "$fingerprint" = "$OAF_RELEASE_SIGNING_FINGERPRINT"
+          git config user.name "OpenAgentFence release"
+          git config user.email "release@openagentfence.invalid"
+          git tag -s -u "$fingerprint" "v${{ inputs.version }}" -m "OpenAgentFence v${{ inputs.version }}"
+          git verify-tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+      - name: Publish audited public tarballs with npm provenance
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          for tarball in artifacts/release/packages/*/*.tgz; do
+            npm publish "$tarball" --provenance --access public
+          done
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: artifacts/release/packages/**/*.tgz
+          sbom-path: artifacts/release/openagentfence.cdx.json
+      - name: Create immutable release with audited assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" artifacts/release/packages/*/*.tgz artifacts/release/openagentfence.cdx.json artifacts/release/package-audit.json --title "OpenAgentFence v${{ inputs.version }}" --generate-notes

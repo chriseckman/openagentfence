@@ -1,5 +1,11 @@
 # Policies
 
+The complete v0.1 key/default/effect table is in
+[policy reference](policy-reference.md). In particular, scanner patterns and
+threshold/suppression helper lookups require explicit application integration;
+reserved `scanners.*.enabled` and `risk.*` fields do not reconfigure the default
+catalog or session risk thresholds in v0.1. P1 policy profiles are unavailable.
+
 `openagentfence.yml` is an authorization-only, versioned YAML or JSON document.
 Its version-1 schema is published at
 [`packages/policy/schemas/openagentfence-policy.schema.json`](../packages/policy/schemas/openagentfence-policy.schema.json).
@@ -95,3 +101,5 @@ deterministic scanner findings. Final capability, private-network, secret-sink,
 ActionIntent, and network-mutation controls cannot be suppressed. Policy traces
 record only matched rule IDs and applied suppression rule/scope/justification
 references.
+
+Stable decision explanations are listed in [reason codes](reason-codes.md).

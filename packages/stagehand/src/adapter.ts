@@ -12,6 +12,7 @@ import {
   type SecuritySession,
   type UntrustedContent,
 } from "@openagentfence/core";
+import { executeStagehandAuthorized } from "@openagentfence/core/internal";
 import { randomUUID } from "node:crypto";
 import type { StagehandLike, StagehandObserveResult } from "./types.js";
 
@@ -310,7 +311,7 @@ export function wrapStagehand(
       if (!retried) return actOnce(instruction, true);
       throw new StagehandSecurityError(mismatch, "Stagehand state changed during bounded retry");
     }
-    return session.executeAuthorizedWith(bound.authorized, {
+    return executeStagehandAuthorized(session, bound.authorized, {
       execute: () => stagehand.act(action),
     });
   };

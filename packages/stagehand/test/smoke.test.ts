@@ -3,6 +3,7 @@ import {
   type IntentStateSnapshot,
   type SecuritySession,
 } from "@openagentfence/core";
+import { STAGEHAND_EXECUTION } from "@openagentfence/core/internal";
 import { describe, expect, it, vi } from "vitest";
 import {
   normalizeObserveResult,
@@ -35,13 +36,6 @@ function allowingSession(): SecuritySession {
       // production minting is intentionally not part of core's public API.
       authorized: { intent } as never,
     })),
-    executeAuthorizedWith: async (
-      _authorized: unknown,
-      executor: { execute(): Promise<unknown> },
-    ) => {
-      fake.bridgeCallCount += 1;
-      return executor.execute();
-    },
     recordRevalidation: vi.fn(),
     inspectUntrustedText: vi.fn(
       async (
@@ -59,6 +53,12 @@ function allowingSession(): SecuritySession {
     ),
     observe: vi.fn(),
   };
+  Object.defineProperty(fake, STAGEHAND_EXECUTION, {
+    value: async (_authorized: unknown, executor: { execute(): Promise<unknown> }) => {
+      fake.bridgeCallCount += 1;
+      return executor.execute();
+    },
+  });
   return fake as unknown as SecuritySession;
 }
 

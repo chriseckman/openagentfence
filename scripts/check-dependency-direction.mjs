@@ -17,7 +17,8 @@ const PREFIX = "@openagentfence/";
 
 /** Strip the `@openagentfence/` prefix, returning the short package name. */
 function short(name) {
-  return name.startsWith(PREFIX) ? name.slice(PREFIX.length) : name;
+  const suffix = name.startsWith(PREFIX) ? name.slice(PREFIX.length) : name;
+  return suffix.split("/")[0] ?? suffix;
 }
 
 /** Recursively list files under a directory. */

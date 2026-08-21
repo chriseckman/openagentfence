@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   buildProbeScript,
+  OpenAgentFence,
   secureDefaultPolicyEngine,
   runAdapterConformance,
   type PolicyEngine,
@@ -280,6 +281,22 @@ describe("probe signals (OAF-CORE-014)", () => {
     await page.setContent("<main>conformance</main>");
     const report = await runAdapterConformance(playwrightAdapter(page));
     expect(report.ok).toBe(true);
+    await page.close();
+  });
+
+  it("rejects untraced raw access and permits only the recorded session escape hatch", async () => {
+    const page = await browser.newPage();
+    const adapter = playwrightAdapter(page);
+    expect(() => adapter.rawPage({} as never)).toThrow("raw page access requires");
+
+    const events: string[] = [];
+    const session = new OpenAgentFence({
+      adapter,
+      trace: { write: (event) => events.push(event.kind) },
+    }).start({ task: "inspect a local page" });
+    expect(session.unsafe.rawPage("local integration assertion")).toBe(page);
+    await session.end();
+    expect(events).toContain("escape_hatch");
     await page.close();
   });
 });

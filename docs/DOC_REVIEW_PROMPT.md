@@ -32,7 +32,8 @@ rg -n -i --pcre2 "(?<!open)agent[f]ence" . --glob "!node_modules/**" --glob "!di
 ```
 
 `pnpm docs:check` validates every relative Markdown file link and local
-Markdown heading/explicit-anchor fragment in root and `docs/` Markdown files.
+Markdown heading/explicit-anchor fragment across tracked project Markdown,
+excluding generated and dependency directories.
 The legacy-name scan may report only the historical rename note in `AGENTS.md`
 and the naming history in ADR-0007. Review each hit; a new product/package/API
 use of the legacy name fails the review.

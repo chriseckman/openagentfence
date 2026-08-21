@@ -83,6 +83,14 @@ selector/form action)` sink. RESTRICTED may reuse that sink only under
 a documented future extension because the current ActionIntent has no such
 state field.
 
+The root API deliberately does not expose a vault-executor capability, raw
+handle minting, or a generic exact-executor callback. Reference-vault lookup
+requires an unforgeable capability minted by the firewall, and only the final
+adapter call receives a session-scoped resolver. Use
+`session.unsafe.rawPage(reason)` for the documented raw-framework escape hatch;
+it records an `escape_hatch` trace event before the adapter receives the raw
+handle. See the [v0.1 API stability ledger](../../docs/api-stability.md).
+
 ### Destination-aware egress DLP (`OAF-DATA-005`)
 
 `EgressInspector` checks bounded ephemeral `EgressPayload` values before an
@@ -323,9 +331,11 @@ policy, action, or intent change;
 such changes require a fresh authorization and, when applicable, a fresh
 application approval.
 
-**Status: not yet published.** No API is stable and nothing here is
+**Status: experimental through v0.3.** No API is stable and nothing here is
 production-ready; it targets the v0.1 plan
 ([implementation plan](../../docs/IMPLEMENTATION_PLAN.md)).
+Every package-root export is experimental through v0.3; see the
+[v0.1 API stability ledger](../../docs/api-stability.md).
 
 M1 acceptance is covered by the executable conformance gate
 (`packages/core/test/m1-conformance.test.ts`), which maps OAF-CORE-001…018 and

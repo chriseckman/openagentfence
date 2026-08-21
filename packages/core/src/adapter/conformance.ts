@@ -117,19 +117,10 @@ export async function runAdapterConformance(
     });
   }
 
-  try {
-    const raw = adapter.rawPage("adapter-conformance");
-    checks.push({
-      name: "rawPage returns the raw framework handle",
-      ok: raw !== undefined && raw !== null,
-    });
-  } catch (err) {
-    checks.push({
-      name: "rawPage returns the raw framework handle",
-      ok: false,
-      detail: String(err),
-    });
-  }
+  checks.push({
+    name: "rawPage is present for the recorded session escape hatch",
+    ok: typeof adapter.rawPage === "function",
+  });
 
   try {
     const dispose = adapter.subscribe("adapter-conformance", {

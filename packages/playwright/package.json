@@ -4,6 +4,15 @@
   "description": "Playwright adapter and secure wrapper.",
   "type": "module",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chriseckman/openagentfence.git",
+    "directory": "packages/playwright"
+  },
+  "bugs": {
+    "url": "https://github.com/chriseckman/openagentfence/issues"
+  },
+  "homepage": "https://github.com/chriseckman/openagentfence#readme",
   "engines": {
     "node": ">=20"
   },
@@ -17,14 +26,16 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/build-package.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
     "test": "vitest run",
@@ -41,7 +52,7 @@
     "eslint": "^9.15.0",
     "playwright": "^1.48.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   },
   "peerDependencies": {
     "playwright": ">=1.40.0"

@@ -272,6 +272,4 @@ export type VisibilityClass = (typeof VISIBILITY_CLASSES)[number];
 // @public
 export function visibleText(classified: ClassifiedObservation): string;
 
-// (No @packageDocumentation comment for this package)
-
 ```

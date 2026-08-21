@@ -1,3 +1,9 @@
+/**
+ * @packageDocumentation
+ * Framework-neutral v0.1 contracts and composition API.
+ * @experimental
+ */
+
 // Contracts
 export { SECURITY_PHASES, isSecurityPhase } from "./contracts/phase.js";
 export type { SecurityPhase } from "./contracts/phase.js";
@@ -138,18 +144,17 @@ export {
   HANDLE_KINDS,
   parseHandle,
   serializeHandle,
-  mintHandle,
   detectHandles,
 } from "./secrets/handle-codec.js";
 export type { SecretHandleKind, SecretHandle } from "./secrets/handle-codec.js";
 export type { SinkBinding, SinkTarget } from "./secrets/sink-binding.js";
 export { inferSecretFieldType } from "./secrets/field-type.js";
 export type { VaultAdapter, SessionVault, ExecutorSecretLookup } from "./secrets/vault-adapter.js";
-export { createScopedSecretResolver, denyAllResolver } from "./secrets/resolver.js";
+export { isVaultExecutorAccess } from "./secrets/vault-access.js";
+export type { VaultExecutorAccess } from "./secrets/vault-access.js";
+export { denyAllResolver } from "./secrets/resolver.js";
 export type {
   SecretResolver,
-  ScopedSecretResolver,
-  ScopedSecretResolverOptions,
   ResolverSessionState,
   SecretResolutionAudit,
 } from "./secrets/resolver.js";
@@ -282,6 +287,8 @@ export type { BudgetKind, BudgetSnapshot, BudgetUse, SessionClock } from "./sess
 export type { PageObservation, FrameInfo } from "./adapter/observation.js";
 export type { BrowserAdapterCapabilities } from "./adapter/capabilities.js";
 export type { BrowserAdapter, AdapterEventSink, AdapterEvent } from "./adapter/browser-adapter.js";
+export { isUnsafeAdapterAccess } from "./adapter/raw-access.js";
+export type { UnsafeAdapterAccess } from "./adapter/raw-access.js";
 export { runAdapterConformance, validatePageObservation } from "./adapter/conformance.js";
 export type { AdapterConformanceReport, ConformanceCheck } from "./adapter/conformance.js";
 
@@ -377,7 +384,6 @@ export type {
   SecuritySessionInit,
   PerceptionResult,
   BoundAuthorizationResult,
-  ExactActionExecutor,
   SessionGuardExecution,
   SessionGuardClassifier,
   SessionGuardScannerFactory,

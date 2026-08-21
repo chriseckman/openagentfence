@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseHandle, serializeHandle, mintHandle, detectHandles } from "../src/index.js";
+import { parseHandle, serializeHandle, detectHandles } from "../src/index.js";
+import { mintHandle } from "../src/secrets/handle-codec.js";
 
 describe("secret handle codec", () => {
   it("round-trips handles", () => {

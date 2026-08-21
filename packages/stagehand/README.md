@@ -67,8 +67,13 @@ The public peer range and compile-time conformance are pinned to `4.0.1`.
 Raw framework access remains an application escape hatch and must be recorded
 by the owning `SecuritySession`.
 
+Stagehand's exact-action consumption uses an unsupported adapter-only core
+integration bridge, not a root `SecuritySession` callback. Applications must
+use `wrapStagehand()` and must not import core internal entry points. The
+[v0.1 API stability ledger](../../docs/api-stability.md) records this boundary.
+
 The closed, bounded offline scenario fixture and runner are documented in
 [`docs/stagehand.md`](../../docs/stagehand.md). They cover 24 recorded corpus-linked
 scenarios and use no live model, credential, or external network call.
 
-**Status: not yet published.**
+**Status: experimental through v0.3.**

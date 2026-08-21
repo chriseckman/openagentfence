@@ -199,7 +199,7 @@ depends only on `core`.
 
 - **Responsibilities:** the `openagentfence.yml` / JSON policy document
   model and its **published, versioned JSON Schema**; loading and
-  validation; a deterministic evaluator implementing `PolicyEngine`;
+  validation; a deterministic evaluator implementing `PolicyEngine`; P1
   reusable profiles (`read-only-research`, `authenticated-read-only`,
   `form-filling`, `shopping-with-approval`, `admin-high-security`,
   `developer-local-browser`); programmatic hooks
@@ -208,8 +208,9 @@ depends only on `core`.
 - **Allowed dependencies:** `core`; a YAML parser; a JSON-Schema validator.
 - **Forbidden:** browser access; network; model calls; secret values.
 - **Public API direction:** `loadPolicy(pathOrDocument): Promise<PolicyEngine>`,
-  `validatePolicy()`, `policyProfile(name)`, `createPolicyEngine(document)`
+  `validatePolicy()`, and `createPolicyEngine(document)`
   ([ADR-0008](adr/0008-policy-loading-and-facade-boundary.md)).
+  `policyProfile(name)` is P1 and unavailable in v0.1.
 
 ### `@openagentfence/vault`
 
@@ -276,12 +277,12 @@ depends only on `core`.
   escape hatch. Handle-bearing uploads and headers are rejected in v0.1.
 - **Allowed dependencies:** `core`; `playwright` as a peer dependency.
 - **Forbidden:** importing Stagehand; scanner logic; policy logic.
-- **Public API direction:** `playwrightAdapter(context | page)`,
+- **Public API direction:** `playwrightAdapter(page)`,
   `wrapPage(session, page)` from the Playwright adapter package.
 
 ### `@openagentfence/stagehand`
 
-- **Responsibilities:** `BrowserAdapter` for Stagehand v4: maps `observe`
+- **Responsibilities:** adapter boundary for Stagehand v4: maps `observe`
   results to `CanonicalAction[]`; `firewall.authorizeActions(candidates)`;
   a **secure wrapper** (`wrapStagehand(session, stagehand, options)`) that performs
   observe -> normalize -> authorize -> act for `act`, gates `extract`
@@ -290,7 +291,8 @@ depends only on `core`.
   With pinned Stagehand 4.0.1, deterministic page controls, forms, uploads,
   downloads, WebMCP, secret sinks, and independent network enforcement are
   unavailable and fail closed rather than falling through generic `act`.
-- **Allowed dependencies:** `core`; Stagehand as a peer dependency with a
+- **Allowed dependencies:** `core` (including its unsupported adapter-only
+  internal bridge); Stagehand as a peer dependency with a
   declared range; optionally the `playwright` adapter for shared page-level
   capture (Q3).
 - **Forbidden:** duplicating security logic; direct guard-model calls.
@@ -314,8 +316,9 @@ depends only on `core`.
 
 ### `@openagentfence/cli`
 
-- **Responsibilities:** `openagentfence init | doctor | test | replay |
-  explain | policy validate`. `doctor` detects common bypass patterns (P1).
+- **Responsibilities:** `openagentfence init | doctor | test | explain |
+  policy validate`. Replay/debug UI and static bypass-source detection are P1
+  and unavailable in v0.1.
 - **Allowed dependencies:** `core`, `policy`, `scanners`, `testing`,
   `providers` (for `doctor` connectivity checks), `vault`, and the
   `playwright` adapter for the bounded local corpus/diagnostic execution
@@ -384,7 +387,7 @@ Browser/page event --normalizes to--> NetworkMutation --checked independently at
 | **`Finding`** | Reproducible evidence (PRD §12): `id, category, title, description, source{type, selector, xpath, origin, frameOrigin, boundingBox}, provenance, evidence (redacted), recommendedAction`, plus optional `severity`/`confidence` that inherit from the parent `ScanResult` when absent. Findings are the *only* channel through which semantic classifiers influence decisions. Never contain raw secrets. |
 | **`RiskAssessment`** | `{ deterministic: Finding[], semantic: Finding[], provenance: Finding[], session: SessionRisk, verdict }` (PRD §15). Built by the aggregator with fixed precedence: critical deterministic block > explicit application policy > secret/data-flow block > session restriction > semantic detection > warning-only heuristics. A semantic "allow" never removes a deterministic block. |
 | **`TaskContract`** | Trusted statement of intent from the application: `task` text, requested `capabilities`, secret sink bindings, origin allowances, budgets, approval configuration. Established at `session.start()`; immutable thereafter. Page content can never modify it. |
-| **`CapabilityEnvelope`** | The *compiled, enforceable* result of the validated `TaskContract` constrained by secure defaults. Answers the session's maximum possible authority without a model. The separate `PolicyEngine` may narrow that baseline or deny an action during deterministic authorization. The envelope can only **shrink** during a session (policy, risk state, budgets); it widens only through a new contract or an application approval with `scope: "session"`. Neither the source policy document nor a profile object enters `core`. |
+| **`CapabilityEnvelope`** | The *compiled, enforceable* result of the validated `TaskContract` constrained by secure defaults. Answers the session's maximum possible authority without a model. The separate `PolicyEngine` may narrow that baseline or deny an action during deterministic authorization. The envelope can only **shrink** during a session (policy, risk state, budgets); it widens only through a new contract or an application approval with `scope: "session"`. Neither the source policy document nor a future P1 profile object enters `core`. |
 | **`CanonicalAction`** | Framework-neutral action (PRD §13.7 taxonomy: `READ SCROLL CLICK TYPE FILL NAVIGATE SUBMIT UPLOAD DOWNLOAD OPEN_TAB CLOSE_TAB COPY PASTE EXECUTE_SCRIPT AUTHENTICATE PURCHASE DELETE PUBLISH MESSAGE CHANGE_SETTING`) with `target` (element descriptor, frame, origin), `destination` (URL/origin where applicable), `data` (values, which may contain secret handles), `instructionProvenance` (where the impulse came from), `sideEffectClass` (P1: `READ_ONLY`, `REVERSIBLE`, `EXTERNAL_SIDE_EFFECT`, `FINANCIAL`, `DESTRUCTIVE`, `SECURITY_SENSITIVE`), and the exact structured framework operation. Unknown operations normalize conservatively and cannot execute through the guarded path. |
 | **`ActionIntent`** | Framework-neutral authorization snapshot proposed by ADR-0010: action/intent ids, browser-context/page id, observation revision, target identity, frame/origin, destination/form action, security-relevant attributes and visibility, policy hash, timestamps/expiry, and a hash/reference for the exact structured operation. It binds a decision to inspected state; it is not itself authority. |
 | **`AuthorizedAction`** | Branded result of successful deterministic authorization carrying the sanitized `CanonicalAction`, its `ActionIntent`, resolver scope, decision/trace reference, and policy hash. Only this type reaches the guarded executor. A mismatch during pre-execution revalidation invalidates it and requires reobservation and reauthorization. |
@@ -596,7 +599,7 @@ whose scope remains within the static policy limits:
 |-------|--------|--------|---------|
 | 1. Task contract + secure defaults | Validated application input; defaults fill omitted capabilities | Trusted requested authority with secure fallbacks | `capabilities.downloads: true`; omitted uploads remain denied |
 | 2. Capability envelope | Compiled from 1 only | Maximum session authority; shrinks only | "uploads denied; navigation same-site" |
-| 3. Static policy | `PolicyEngine` created from `openagentfence.yml`, JSON, a profile, or application code | Rules already validated outside `core`; deterministic narrowing | `actions.purchase: approval`, `navigation.block_private_networks: true` |
+| 3. Static policy | `PolicyEngine` created from `openagentfence.yml`, JSON, or application code | Rules already validated outside `core`; deterministic narrowing | `actions.purchase: approval`, `navigation.block_private_networks: true` |
 | 4. Runtime policy | Risk state, budgets, session approvals (`scope: session`), suppressions | Dynamic; deterministic | `RESTRICTED` disables cross-origin navigation |
 | 5. Semantic advisory findings | Guard models, task-alignment scanner | Evidence; advisory unless policy elevates a category | "high-confidence injection -> restricted_mode" |
 | 6. Deterministic enforcement | Action Guard applying 1-4 with 5 as evidence | Final | `BLOCK: destination_not_allowed` |
@@ -611,7 +614,7 @@ Key rules:
 - The declarative policy subset is **language-neutral** and validated by a
   published JSON Schema; TypeScript callbacks (P1) extend it and are recorded
   in traces by name and hash.
-- The source policy document and profile objects stay in
+- The source policy document and future P1 profile objects stay in
   `@openagentfence/policy`; `core` receives only a `PolicyEngine`. Provider
   runtime configuration is application-owned and is not policy
   ([ADR-0008](adr/0008-policy-loading-and-facade-boundary.md),
@@ -650,7 +653,8 @@ Wrapper behavior (`wrapStagehand(session, stagehand, { stateResolver })`):
   original instruction to `act()` after authorizing a candidate is a security
   defect because it can infer a different operation. If Stagehand cannot expose
   or execute a single validated structured action for a path, that path is
-  **disabled by the wrapper** and reported by `openagentfence doctor`.
+  **disabled by the wrapper** and reported by the Stagehand capability ledger,
+  not by the Playwright-oriented CLI doctor.
 - Handle-bearing `act` candidates remain handle-only through `observe` and are
   disabled before generic `act(Action)`. Pinned v4 can expose action arguments
   in framework paths and configured self-healing can re-enter model inference;
@@ -820,7 +824,7 @@ NORMAL -> RESTRICTED -> READ_ONLY -> QUARANTINED
 | `READ_ONLY` | Higher risk; only observation is safe. | Only `READ`, `SCROLL`, and same-site `NAVIGATE` via links; no form interaction or typing; no secret resolution; no uploads, downloads, or account changes. |
 | `QUARANTINED` | Session integrity is not trusted. | All side-effecting actions blocked; observation permitted for diagnostics; the application must explicitly release or end the session. |
 
-Default weights (profile-overridable, PRD v0.7 §13.11): hidden injection
+Default firewall-owned weights (P1 profiles cannot override them in v0.1): hidden injection
 +40, cross-origin redirect +20, secret requested +50, unrelated new tab +30.
 Default thresholds: `RESTRICTED` ≥ 40, `READ_ONLY` ≥ 80, `QUARANTINED`
 ≥ 120. Independent of score: a high-confidence injection finding →
@@ -969,7 +973,7 @@ remains, the milestone that owns it (see
 | Q5 | **Resolved by [ADR-0008](adr/0008-policy-loading-and-facade-boundary.md).** The facade accepts a `PolicyEngine` (secure-default engine when omitted); `@openagentfence/policy` exports `loadPolicy(path)`; the path-string one-liner arrives later via an unscoped `openagentfence` meta-package. | PRD §3, §18.2 | Done |
 | Q6 | **Resolved (PRD v0.6 §13.11).** Restricted mode disables *new* secret sink authorizations; sinks approved earlier in the session remain usable by default, and policy may deny them (`secrets.restricted_mode: keep_approved_sinks \| deny_all`). Assigned to OAF-DATA-003. | PRD §13.11, §30 | M3/M4 |
 | Q7 | **Resolved (PRD v0.6 §12).** `Finding` carries optional `severity` and `confidence`; when absent they inherit from the parent `ScanResult`. Assigned to OAF-CORE-001. | PRD §11-12, §15 | M1 |
-| Q8 | **Resolved (PRD v0.7 §13.11).** Defaults: hidden injection +40, cross-origin redirect +20, secret requested +50, unrelated new tab +30; `RESTRICTED` ≥ 40, `READ_ONLY` ≥ 80, `QUARANTINED` ≥ 120; high-confidence injection → `RESTRICTED` and critical finding → `QUARANTINED` regardless of score. Profile-overridable; to be tuned against the benign corpus in M8. Assigned to OAF-SEC-006. | PRD §13.11 | M3 |
+| Q8 | **Resolved (PRD v0.7 §13.11).** Defaults: hidden injection +40, cross-origin redirect +20, secret requested +50, unrelated new tab +30; `RESTRICTED` ≥ 40, `READ_ONLY` ≥ 80, `QUARANTINED` ≥ 120; high-confidence injection → `RESTRICTED` and critical finding → `QUARANTINED` regardless of score. These are firewall-owned in v0.1; P1 profile customization is unavailable. Assigned to OAF-SEC-006. | PRD §13.11 | M3 |
 | Q9 | **Resolved and expanded (PRD v0.9 §13.9).** Authorized-action egress remains enforced as documented, while the P0 `NetworkMutation` contract independently represents page/script/form/redirect/WebMCP/service-worker traffic. Routing enforcement is opt-in where required; WebSocket/frame and unobservable surfaces remain explicit gaps until proxy integration. `doctor` reports each surface as enforced, observed-only, or unavailable. | PRD §13.9 | M1 contract / M2 adapters / M4 enforcement |
 | Q10 | **Resolved and implemented (PRD v0.8 §13.12).** `session.memory.guardWrite(item)` runs required deterministic PERSISTENCE scanners and returns a closed canonical-hashed `kind: data` item or no storable item; `guardRead(item)` verifies schema/hash, preserves origin metadata under memory trust, and activates the taint floor. Storage remains application-owned. OAF-PROV-006 adds enhanced cross-session reinspection and policy in P1. | PRD §13.12 | M6 PS-003 |
 | Q11 | **Resolved (PRD v0.7 §13.11).** `RESTRICTED`: `READ`, `SCROLL`, same-site `NAVIGATE`, same-origin `CLICK`/`TYPE`/`FILL` without secrets, contract `DOWNLOAD`; rest approval/block. `READ_ONLY`: `READ`, `SCROLL`, same-site link `NAVIGATE` only; no forms, typing, or secrets. `QUARANTINED`: observation only. See §12. | PRD §13.11 | M3 |
