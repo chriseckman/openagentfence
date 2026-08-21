@@ -14,6 +14,10 @@
         target.id = "target";
         document.body.append(target);
         switch (variant) {
+          case "display-none":
+            target.style.display = "none";
+            target.textContent = instruction;
+            break;
           case "visibility-hidden":
             target.style.visibility = "hidden";
             target.textContent = instruction;

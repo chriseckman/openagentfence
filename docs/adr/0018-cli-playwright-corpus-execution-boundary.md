@@ -1,6 +1,6 @@
 # ADR-0018: CLI composition boundary for Playwright corpus execution
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-20
 - **Related:** PRD §§19.3, 27 item 24, 29.4; Architecture §3; OAF-TEST-012; INV-02, INV-05, INV-17
 

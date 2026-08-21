@@ -324,7 +324,7 @@ created, here.
 - Objective: Provide the PR pipeline lint → typecheck → unit → integration (headless Chromium) → security corpus, plus the security workflows of PRD §21/§29.5.
 - Dependencies: OAF-REPO-002
 - Files/packages affected: `.github/workflows/ci.yml`, `codeql.yml`, `dependency-review.yml`, `scorecard.yml`, `renovate.json` (or `dependabot.yml`), `.github/actions/setup/` composite action.
-- Implementation notes: All third-party actions pinned to commit SHAs; `permissions:` least privilege per job (`contents: read` default); matrix = two most recent Node LTS + current × Linux/macOS/Windows for unit; integration and corpus jobs on Linux with Playwright Chromium (Firefox/WebKit best-effort, allowed to fail, per PRD §29.1). The `security-corpus` job is a placeholder that runs `openagentfence test --corpus` once OAF-TEST-012 lands and is then marked required (branch protection notes in OAF-REPO-004). Renovate: lockfile maintenance; automerge only dev-dependency patches after the full pipeline. DCO check job.
+- Implementation notes: All third-party actions pinned to commit SHAs; `permissions:` least privilege per job (`contents: read` default); matrix = two most recent Node LTS + current × Linux/macOS/Windows for unit; integration and corpus jobs run on Linux with Playwright Chromium (Firefox/WebKit best-effort, allowed to fail, per PRD §29.1). The enabled `security-corpus` job runs the shipped `openagentfence test --corpus` gate and uploads only its bounded JUnit report. Remote required-check enforcement remains a PS-025/D-03 release-only verification (branch-protection notes in OAF-REPO-004). Renovate: lockfile maintenance; automerge only dev-dependency patches after the full pipeline. DCO check job.
 - Acceptance criteria: A PR touching only docs still runs lint/typecheck; a PR with an unpinned action fails a self-check step; Scorecard runs on schedule; CodeQL runs on PR and `main`.
 - Tests required: CI itself; add a workflow-lint step (e.g. `actionlint`) pinned by SHA.
 - Security considerations: Supply-chain P0 (PRD §21): pinning, secret scanning enabled in repo settings (documented), no `pull_request_target` with checkout of PR code.
@@ -739,7 +739,7 @@ exception.
 - Objective: Close the authorize-A/execute-B vulnerability in the current Stagehand wrapper. `observe(instruction)` returns a runtime-validated v4 structured response; normalization preserves the exact action snapshot; authorization identifies one allowed executable candidate; `act()` receives that structured candidate, never the original instruction.
 - Dependencies: OAF-BROWSER-003; ADR-0002 and INV-08 (this fix is not gated on ADR-0010).
 - Files/packages affected: `packages/stagehand/src/{types,adapter,index}.ts`, tests, package manifest/lockfile, API report, package README/changeset.
-- Implementation notes: Missing/malformed method/action, invalid v4 response, zero authorized candidates, or multiple allowed candidates fails closed with a typed security error. Public peer support is `^4.0.0`; exact Stagehand 4.0.1 is a development dependency with compile-time structural conformance. No model/network call occurs in tests.
+- Implementation notes: Missing/malformed method/action, invalid v4 response, zero authorized candidates, or multiple allowed candidates fails closed with a typed security error. Public peer and development support are pinned to exact Stagehand `4.0.1` with compile-time structural conformance. No model/network call occurs in tests.
 - Acceptance criteria: Regression test proves a malicious/different natural-language instruction is never passed to execution; `act` receives the exact structured fields inspected by authorization; ambiguity and malformed responses cause zero execution; exact-v4 type conformance compiles.
 - Tests required: Recorded v4 action tests for exact execution, ambiguity, missing method, malformed response, and no-authorized-action; type-level conformance against 4.0.1.
 - Security considerations: INV-08, TB4/TB5, A7/A9; vulnerability fix under ADR-0002.
@@ -1554,7 +1554,7 @@ surfaces.
   direct Threat Model and Security Guarantee Matrix links, a required CI gate,
   and a manifest-scoped plugin execution repair. The strict corpus is 227 cases
   across 31 fixtures with canonical hash
-  `a0ce0709c0d5e0fb43189558c8cbb2fc0da1dcafe71cf129f7f0da841327b536`.
+  `4c45eece9b8d6b606b39077f31146521b837f62ad4780fa6b9ebce3e2ccf185e`.
 
 ---
 

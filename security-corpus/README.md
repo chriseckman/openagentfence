@@ -51,10 +51,14 @@ both metadata and page content while remaining independent of manifest order.
 ```text
 pnpm --filter @openagentfence/testing test
 pnpm --filter @openagentfence/playwright test:integration
+pnpm test:corpus
 ```
 
-The full `openagentfence test --corpus security-corpus/` command and required
-CI regression gate land in OAF-TEST-012 later in M7.
+`pnpm test:corpus` builds and runs the shipped
+`openagentfence test --corpus security-corpus/` command locally against
+headless Playwright. The enabled `security-corpus` CI job performs the same
+loopback-only check and uploads only its bounded JUnit report. Remote branch
+protection configuration remains a separately verified PS-025 release gate.
 
 ## Current deterministic perception matrix
 
@@ -78,7 +82,7 @@ The totals include the original display-none, accessibility-only ARIA,
 Base64, skip-link, and accessible-product seeds. The query-selected matrix
 fixtures are committed deterministic `mutation` cases; their variant name is
 inert metadata, and the fixture bytes are included in corpus hash
-`a0ce0709c0d5e0fb43189558c8cbb2fc0da1dcafe71cf129f7f0da841327b536`.
+`4c45eece9b8d6b606b39077f31146521b837f62ad4780fa6b9ebce3e2ccf185e`.
 
 The multilingual group exercises language-independent structure and bounded
 normalization across Latin, Japanese, Arabic, and Hebrew pages. Mixed-language

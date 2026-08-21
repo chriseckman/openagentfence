@@ -152,7 +152,7 @@ jobs:
           if-no-files-found: error
 
   security-corpus:
-    name: Security corpus foundation
+    name: Security corpus regression (headless Chromium)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -164,10 +164,22 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # OAF-TEST-001/002 foundation: strict schema, fixture resolution/hash,
-      # helper/server self-tests, and whole-corpus synthetic-secret lint.
-      # PS-017 adds the full generated corpus CLI regression gate.
       - run: pnpm --filter @openagentfence/testing test
+      # Includes the hostile-executor regression: arbitrary executor failures
+      # can only render closed corpus reason codes in published artifacts.
+      - run: pnpm --filter @openagentfence/cli test
+      - run: pnpm build
+      - run: pnpm --filter @openagentfence/playwright exec playwright install --with-deps chromium
+      - run: pnpm test:corpus --reporter junit --output ../../artifacts/corpus/results.junit.xml
+        env:
+          CI: "true"
+      - name: Upload safe corpus report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: security-corpus-junit
+          path: artifacts/corpus
+          if-no-files-found: error
 
   invariants:
     name: Security invariants (INV-01 through INV-21)

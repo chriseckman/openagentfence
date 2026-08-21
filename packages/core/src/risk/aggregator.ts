@@ -40,7 +40,10 @@ function isProvenanceFinding(finding: Finding): boolean {
 
 function isSecretFinding(finding: Finding): boolean {
   return (
-    finding.category.startsWith("secret") ||
+    // A completed detector returns `sanitize` for raw sensitive material. Its
+    // replacement/handle is the security boundary; only incomplete scans and
+    // explicit exfiltration evidence own the layer-3 blocking disposition.
+    finding.category === "secret_scan_incomplete" ||
     finding.category.includes("exfiltration") ||
     finding.recommendedAction === "block"
   );
@@ -232,9 +235,7 @@ function aggregate(input: RiskAggregationInput): RiskAssessment {
   }
 
   // Layer 6: warning-only heuristics (deterministic and semantic advisories).
-  const warning = [...deterministic, ...semantic].find(
-    (f) => f.recommendedAction === "warn" || f.recommendedAction === "sanitize",
-  );
+  const warning = [...deterministic, ...semantic].find((f) => f.recommendedAction === "warn");
   if (warning !== undefined) {
     const reasons =
       warning.category === "scanner_unavailable" ? [REASON_CODES.scanner_unavailable] : [];
@@ -242,6 +243,25 @@ function aggregate(input: RiskAggregationInput): RiskAssessment {
       layer: "heuristic",
       ruleOrFindingId: warning.id,
     });
+  }
+
+  const sanitization = [...deterministic, ...semantic].find(
+    (f) => f.recommendedAction === "sanitize",
+  );
+  if (sanitization !== undefined) {
+    return assessment(
+      deterministic,
+      semantic,
+      provenance,
+      score,
+      riskState,
+      "ALLOW_SANITIZED",
+      [],
+      {
+        layer: "heuristic",
+        ruleOrFindingId: sanitization.id,
+      },
+    );
   }
 
   if (input.budgetsExhausted) {

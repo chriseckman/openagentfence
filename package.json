@@ -18,6 +18,7 @@
     "benchmark:pr": "pnpm --filter @openagentfence/testing benchmark:pr",
     "test:property": "turbo run test:property",
     "test:integration": "turbo run test:integration",
+    "test:corpus": "pnpm --filter @openagentfence/cli corpus:test",
     "api-report": "turbo run build && node scripts/api-report.mjs",
     "api-report:check": "turbo run build && node scripts/api-report.mjs --check",
     "check:deps": "node scripts/check-dependency-direction.mjs",

@@ -85,6 +85,40 @@ describe("risk aggregator fixed precedence", () => {
     expect(r.decidedBy?.layer).toBe("secret");
   });
 
+  it("completed secret detection remains sanitized rather than inventing an egress block", () => {
+    const r = riskAggregator.aggregate({
+      scanResults: [
+        mkScanResult("secret-sensitive", "deterministic", "sanitize", [
+          mkFinding("secret-1", "secret_detected", { recommendedAction: "sanitize" }),
+        ]),
+      ],
+      policyDecision: allow(),
+      riskState: "NORMAL",
+      score: 0,
+      budgetsExhausted: false,
+    });
+    expect(r.verdict).toBe("ALLOW_SANITIZED");
+    expect(r.decidedBy?.layer).toBe("heuristic");
+  });
+
+  it("an incomplete sensitive-data scan remains fail closed", () => {
+    const r = riskAggregator.aggregate({
+      scanResults: [
+        mkScanResult("secret-sensitive", "deterministic", "sanitize", [
+          mkFinding("secret-incomplete", "secret_scan_incomplete", {
+            recommendedAction: "sanitize",
+          }),
+        ]),
+      ],
+      policyDecision: allow(),
+      riskState: "NORMAL",
+      score: 0,
+      budgetsExhausted: false,
+    });
+    expect(r.verdict).toBe("BLOCK");
+    expect(r.decidedBy?.layer).toBe("secret");
+  });
+
   it("semantic allow never lowers a deterministic verdict (property)", () => {
     fc.assert(
       fc.property(

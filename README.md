@@ -67,7 +67,7 @@ deferred work. See [Status](#status) for release qualification.
 | State | Items |
 |-------|-------|
 | **Available locally (M0-M6)** | Core contracts and traces; policy and deterministic Action Guard; Playwright/Stagehand fail-closed adapters; provenance carrier, taint floor, bounded coarse source-to-sink registry, and guarded memory write/read lifecycle; vault, secret scanning/resolution, DLP and Network Mutation Guard; offline-tested provider adapters, tier router, and opt-in BYOK scanner. Capability matrices identify enforced, observed-only, and unavailable surfaces. |
-| **In development (M7-M8)** | Remaining adversarial corpus/invariant/benchmark gates, P0 CLI, API/docs freeze, and release hardening. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). |
+| **In development (M7-M8)** | M7 adversarial-verification gate, M8 measurement/tuning, API/docs freeze, and release hardening. The P0 corpus CLI is available locally. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). |
 | **Required before v0.1** | M7-M8 P0 gates, current benchmark and false-positive evidence, complete release validation, and separately authorized/verifiable external publication. |
 | **Deferred (v0.2+)** | Visual guard model and screenshot/DOM discrepancy detection or semantic matching, data-flow graph, signed receipts, network proxy, document parsing, enterprise DLP, reputation feeds, plugin marketplace, browser extension, hosted dashboard, Python SDK. |
 

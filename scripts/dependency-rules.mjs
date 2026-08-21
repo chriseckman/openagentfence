@@ -14,7 +14,7 @@ export const ALLOWED_DEPENDENCIES = {
   playwright: ["core"],
   stagehand: ["core", "playwright"],
   testing: ["core", "scanners", "policy"],
-  cli: ["core", "policy", "scanners", "testing", "providers", "vault"],
+  cli: ["core", "policy", "scanners", "testing", "providers", "vault", "playwright"],
 };
 
 const PACKAGE_NAMES = Object.keys(ALLOWED_DEPENDENCIES);

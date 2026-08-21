@@ -25,12 +25,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "corpus:test": "node dist/bin.js test --corpus ../../security-corpus",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
     "test": "vitest run"
   },
   "dependencies": {
     "@openagentfence/core": "workspace:*",
+    "@openagentfence/playwright": "workspace:*",
     "@openagentfence/policy": "workspace:*",
     "@openagentfence/scanners": "workspace:*",
     "@openagentfence/testing": "workspace:*",
@@ -38,11 +40,16 @@
     "@openagentfence/vault": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.9.0",
     "eslint": "^9.15.0",
+    "playwright": "^1.48.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   },
   "bin": {
-    "openagentfence": "./dist/index.js"
+    "openagentfence": "./dist/bin.js"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
   }
 }

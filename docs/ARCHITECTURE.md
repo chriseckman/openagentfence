@@ -317,7 +317,9 @@ depends only on `core`.
 - **Responsibilities:** `openagentfence init | doctor | test | replay |
   explain | policy validate`. `doctor` detects common bypass patterns (P1).
 - **Allowed dependencies:** `core`, `policy`, `scanners`, `testing`,
-  `providers` (for `doctor` connectivity checks), `vault`.
+  `providers` (for `doctor` connectivity checks), `vault`, and the
+  `playwright` adapter for the bounded local corpus/diagnostic execution
+  surfaces defined by [ADR-0018](adr/0018-cli-playwright-corpus-execution-boundary.md).
 - **Forbidden:** security logic of its own; telemetry.
 - **Public API direction:** binary only; programmatic use goes through the
   packages above.
