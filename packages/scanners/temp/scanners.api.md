@@ -88,6 +88,9 @@ export function createHiddenDomScanner(): ReturnType<typeof defineScanner>;
 export function createLocalNetworkSsrfScanner(): ReturnType<typeof defineScanner>;
 
 // @public
+export function createMemoryWriteScanner(): ReturnType<typeof defineScanner>;
+
+// @public
 export function createMetadataScanner(): ReturnType<typeof defineScanner>;
 
 // @public
@@ -137,6 +140,9 @@ export interface DecodeOutcome {
     readonly text: string;
 }
 
+// @public
+export function decodeUnicodeEscapes(input: string): string;
+
 // @public (undocumented)
 export function decodeUrlEncoded(input: string): string;
 
@@ -157,14 +163,21 @@ export function fold(input: string): string;
 // @public (undocumented)
 export function foldHomoglyphs(input: string): string;
 
+// @public
+export function foldLeetspeak(input: string): string;
+
 // @public (undocumented)
 export interface InjectionMatch {
     // (undocumented)
     readonly category: string;
     // (undocumented)
+    readonly end: number;
+    // (undocumented)
     readonly evidence: string;
     // (undocumented)
     readonly ruleId: string;
+    // (undocumented)
+    readonly start: number;
 }
 
 // @public (undocumented)
@@ -188,6 +201,13 @@ export function isHiddenClass(v: VisibilityClass): boolean;
 
 // @public (undocumented)
 export function isVisibleClass(v: VisibilityClass): boolean;
+
+// @public (undocumented)
+export const MEMORY_WRITE_SCAN_LIMITS: Readonly<{
+    maxBytes: number;
+    maxMatches: 32;
+    maxInstructionLength: 512;
+}>;
 
 // @public
 export interface PolicySecretPrefixPattern {

@@ -33,6 +33,9 @@ export function createMetadataScanner(): ReturnType<typeof defineScanner> {
       probe.metadata.jsonLd.forEach((json, index) => {
         sources.push([`json-ld:${index}`, json]);
       });
+      probe.metadata.noscript.forEach((text, index) => {
+        sources.push([`noscript:${index}`, text]);
+      });
 
       for (const [label, text] of sources) {
         for (const match of scanInjection(text)) {

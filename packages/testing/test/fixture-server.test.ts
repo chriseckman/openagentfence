@@ -1,10 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startFixtureServer, type FixtureOrigin, type FixtureServer } from "../src/index.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  FIXTURE_SERVER_LIMITS,
+  startFixtureServer,
+  type FixtureOrigin,
+  type FixtureServer,
+} from "../src/index.js";
 
 let server: FixtureServer;
 
 beforeAll(async () => {
-  server = await startFixtureServer({ originCount: 2 });
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "security-corpus");
+  server = await startFixtureServer({ origins: ["source", "sink"], root });
 });
 
 afterAll(async () => {
@@ -29,6 +37,15 @@ describe("fixture server (OAF-TEST-001)", () => {
     expect(server.origins[0]?.origin).not.toBe(server.origins[1]?.origin);
   });
 
+  it("starts within one second and validates origin configuration", async () => {
+    const started = Date.now();
+    const temporary = await startFixtureServer({ origins: ["solo"] });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    await temporary.close();
+    await expect(startFixtureServer({ originCount: 9 })).rejects.toThrow();
+    await expect(startFixtureServer({ origins: ["same", "same"] })).rejects.toThrow();
+  });
+
   it("serves the hidden-DOM attack and benign fixtures", async () => {
     const origin = originAt(0);
     const attack = await fetch(`${origin.origin}/hidden-dom/display-none-instruction.html`);
@@ -50,6 +67,17 @@ describe("fixture server (OAF-TEST-001)", () => {
     expect(await benign.text()).toContain("/catalog");
   });
 
+  it("serves corpus-root fixtures and rejects traversal", async () => {
+    const origin = originAt(0);
+    const multilingual = await fetch(
+      server.url(origin, "/hidden-dom/multilingual-instruction.html"),
+    );
+    expect(multilingual.status).toBe(200);
+    expect(await multilingual.text()).toContain("Ignora las instrucciones");
+    const traversal = await fetch(server.url(origin, "/%2e%2e%2fREADME.md"));
+    expect(traversal.status).toBe(404);
+  });
+
   it("redirects and captures the request", async () => {
     const origin = originAt(0);
     const res = await fetch(`${origin.origin}/redirect?to=/capture`, { redirect: "manual" });
@@ -60,9 +88,24 @@ describe("fixture server (OAF-TEST-001)", () => {
 
   it("captures a POST body", async () => {
     const origin = originAt(0);
+    server.clearRequests();
     await fetch(`${origin.origin}/capture`, { method: "POST", body: "token=abc" });
-    expect(server.requests.some((r) => r.method === "POST" && r.body.includes("token=abc"))).toBe(
-      true,
+    const captured = await server.waitForRequest((request) => request.method === "POST");
+    expect(captured?.body).toContain("token=abc");
+    expect(server.requestsFor("source")).toHaveLength(1);
+  });
+
+  it("drains oversized bodies but bounds captured content", async () => {
+    const origin = originAt(0);
+    server.clearRequests();
+    const body = "x".repeat(FIXTURE_SERVER_LIMITS.maxRequestBodyBytes + 1);
+    const response = await fetch(server.url(origin, "/echo"), { method: "POST", body });
+    expect(response.status).toBe(413);
+    const captured = server.requests[0];
+    expect(captured?.bodyTruncated).toBe(true);
+    expect(captured?.bodyBytes).toBe(body.length);
+    expect(Buffer.byteLength(captured?.body ?? "", "utf8")).toBe(
+      FIXTURE_SERVER_LIMITS.maxRequestBodyBytes,
     );
   });
 
@@ -73,5 +116,8 @@ describe("fixture server (OAF-TEST-001)", () => {
 
     const popup = await fetch(`${origin.origin}/popup`);
     expect(await popup.text()).toContain("window.open");
+
+    const mutation = await fetch(`${origin.origin}/mutation`);
+    expect(await mutation.text()).toContain("setTimeout");
   });
 });

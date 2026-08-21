@@ -57,6 +57,8 @@
             "action_revalidation",
             "secret_resolution",
             "egress_inspection",
+            "memory_write",
+            "memory_read",
             "session_end"
           ]
         },

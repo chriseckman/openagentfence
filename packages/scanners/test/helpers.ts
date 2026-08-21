@@ -56,7 +56,10 @@ export function node(overrides: Partial<ProbeNode> = {}): ProbeNode {
   };
 }
 
-export function scannerContext(probeResult: ProbeResult): SecurityContext {
+export function scannerContext(
+  probeResult: ProbeResult,
+  redactor: RedactionRegistry = new RedactionRegistry(),
+): SecurityContext {
   return {
     phase: "PERCEPTION",
     sessionId: "test-session",
@@ -74,7 +77,7 @@ export function scannerContext(probeResult: ProbeResult): SecurityContext {
       },
     },
     provenance: { trust: "web" },
-    redactor: new RedactionRegistry(),
+    redactor,
     deadline: Date.now() + 10_000,
     signal: new AbortController().signal,
   };

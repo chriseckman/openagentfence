@@ -40,23 +40,30 @@ export interface FindingSpec {
 
 /** Build a redacted finding without losing the security-context source. */
 export function makeFinding(ctx: SecurityContext, spec: FindingSpec): Finding {
+  // Selectors and origins are browser-derived and may contain a registered
+  // sensitive value. Redact every string copied into public finding and
+  // provenance metadata, not only the evidence excerpt (INV-05/13).
+  const selector = spec.selector === undefined ? undefined : ctx.redactor.redact(spec.selector);
+  const origin = spec.origin === undefined ? undefined : ctx.redactor.redact(spec.origin);
+  const frameOrigin =
+    spec.frameOrigin === undefined ? undefined : ctx.redactor.redact(spec.frameOrigin);
   const source: FindingSource = {
     type: spec.sourceType,
-    ...(spec.selector !== undefined ? { selector: spec.selector } : {}),
-    ...(spec.origin !== undefined ? { origin: spec.origin } : {}),
-    ...(spec.frameOrigin !== undefined ? { frameOrigin: spec.frameOrigin } : {}),
+    ...(selector !== undefined ? { selector } : {}),
+    ...(origin !== undefined ? { origin } : {}),
+    ...(frameOrigin !== undefined ? { frameOrigin } : {}),
   };
   const provenance: DataProvenance = {
     ...(spec.provenance ?? ctx.provenance),
-    ...(spec.origin !== undefined ? { origin: spec.origin } : {}),
-    ...(spec.frameOrigin !== undefined ? { frameOrigin: spec.frameOrigin } : {}),
-    ...(spec.selector !== undefined ? { elementId: spec.selector } : {}),
+    ...(origin !== undefined ? { origin } : {}),
+    ...(frameOrigin !== undefined ? { frameOrigin } : {}),
+    ...(selector !== undefined ? { elementId: selector } : {}),
   };
   return {
-    id: spec.id,
-    category: spec.category,
-    title: spec.title,
-    description: spec.description,
+    id: ctx.redactor.redact(spec.id),
+    category: ctx.redactor.redact(spec.category),
+    title: ctx.redactor.redact(spec.title),
+    description: ctx.redactor.redact(spec.description),
     source,
     provenance,
     evidence: ctx.redactor.redact(spec.evidence),

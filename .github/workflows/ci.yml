@@ -77,6 +77,55 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  property-fuzz:
+    name: Property and fuzz security suite (1,000 runs/property)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:property
+
+  stagehand-conformance:
+    name: Stagehand 4.0.1 conformance (Node 22.18.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @openagentfence/stagehand lint
+      - run: pnpm --filter @openagentfence/stagehand typecheck
+      - run: pnpm --filter @openagentfence/stagehand test
+      - run: pnpm exec tsc -p examples/tsconfig.json
+
+  promptfoo-example:
+    name: Promptfoo 0.122.0 offline example (Node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm promptfoo:check
+
   integration:
     name: Integration (headless Chromium)
     runs-on: ubuntu-latest
@@ -103,15 +152,59 @@ jobs:
           if-no-files-found: error
 
   security-corpus:
-    name: Security corpus
+    name: Security corpus foundation
     runs-on: ubuntu-latest
-    # Placeholder until M7 (OAF-TEST-012), then runs
-    # `openagentfence test --corpus security-corpus/` and is marked required.
-    if: false
     steps:
-      - name: Placeholder
-        run: |
-          echo "security-corpus placeholder (enabled at M7, OAF-TEST-012)"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # OAF-TEST-001/002 foundation: strict schema, fixture resolution/hash,
+      # helper/server self-tests, and whole-corpus synthetic-secret lint.
+      # PS-017 adds the full generated corpus CLI regression gate.
+      - run: pnpm --filter @openagentfence/testing test
+
+  invariants:
+    name: Security invariants (INV-01 through INV-21)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:invariants
+
+  benchmark-smoke:
+    name: Reproducible benchmark smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm benchmark:pr
+        env:
+          OAF_BENCHMARK_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/benchmarks
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: offline-benchmark-smoke
+          path: artifacts/benchmarks
+          if-no-files-found: error
 
   docs:
     name: Docs link check

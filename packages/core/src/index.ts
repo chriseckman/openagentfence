@@ -12,6 +12,16 @@ export {
 } from "./contracts/provenance.js";
 export type { DataProvenance, ProvenancedDatum, TrustLevel } from "./contracts/provenance.js";
 
+export { createSourceSinkCheck } from "./provenance/source-sink.js";
+export type { SourceSinkCheck, SourceSinkCheckOptions } from "./provenance/source-sink.js";
+export { SourceValueRegistry, DEFAULT_SOURCE_VALUE_LIMITS } from "./provenance/value-registry.js";
+export type {
+  SourceValueEvidence,
+  SourceValueMatch,
+  SourceValueRegistration,
+  SourceValueRegistryLimits,
+} from "./provenance/value-registry.js";
+
 export { SCANNER_VERDICTS, AGGREGATE_VERDICTS, SCANNER_TO_AGGREGATE } from "./contracts/verdict.js";
 export type { ScannerVerdict, AggregateVerdict } from "./contracts/verdict.js";
 
@@ -57,6 +67,27 @@ export type {
 } from "./contracts/trusted-intent-context.js";
 export { validateUntrustedContent, wrapUntrustedContent } from "./contracts/untrusted-content.js";
 export type { UntrustedContent, UntrustedContentInput } from "./contracts/untrusted-content.js";
+
+export {
+  MEMORY_ITEM_SCHEMA_VERSION,
+  MAX_MEMORY_CONTENT_BYTES,
+  MAX_MEMORY_MARKERS,
+  MEMORY_SENSITIVITIES,
+  MEMORY_MARKERS,
+  createStoredMemoryItem,
+  memoryItemHash,
+  memoryReadDatum,
+  validateMemoryWriteCandidate,
+  validateStoredMemoryItem,
+} from "./memory/item.js";
+export type {
+  MemorySensitivity,
+  MemoryMarker,
+  MemoryWriteCandidate,
+  StoredMemoryItem,
+} from "./memory/item.js";
+export { MEMORY_GUARD_REASONS, MemoryGuardError } from "./memory/guard.js";
+export type { MemoryGuardReason, MemoryWriteResult, SessionMemoryGuard } from "./memory/guard.js";
 
 // Action
 export { ACTION_TYPES, SIDE_EFFECT_CLASSES } from "./action/canonical-action.js";
@@ -188,7 +219,7 @@ export type { RiskPolicy, RiskSignal, RiskTransition } from "./risk/engine.js";
 // Scanner
 export { SCANNER_PERMISSIONS } from "./scanner/manifest.js";
 export type { ScannerPermission, PluginManifest } from "./scanner/manifest.js";
-export type { SecurityScanner } from "./scanner/scanner.js";
+export type { SecurityScanner, PluginSecurityScannerDefinition } from "./scanner/scanner.js";
 export type {
   SecurityContext,
   PhasePayload,
@@ -196,7 +227,7 @@ export type {
   ScopedContextView,
 } from "./scanner/context.js";
 export { buildScopedView } from "./scanner/context.js";
-export { defineScanner } from "./scanner/define-scanner.js";
+export { defineScanner, definePluginScanner } from "./scanner/define-scanner.js";
 
 // Orchestrator
 export { ScannerRegistry } from "./orchestrator/registry.js";
@@ -228,8 +259,13 @@ export type {
 } from "./trace/events.js";
 export { TraceWriter, redactDeep } from "./trace/writer.js";
 export type { TraceSink } from "./trace/writer.js";
-export { RedactionRegistry, hash, secretRedactionForms } from "./trace/redact.js";
-export type { RedactedEvidence, Redactor } from "./trace/redact.js";
+export {
+  RedactionRegistry,
+  DEFAULT_REDACTION_LIMITS,
+  hash,
+  secretRedactionForms,
+} from "./trace/redact.js";
+export type { RedactedEvidence, Redactor, RedactionRegistryLimits } from "./trace/redact.js";
 export {
   validateTraceEvent,
   validateTraceDocument,

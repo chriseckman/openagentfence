@@ -17,6 +17,7 @@ import {
   type SecretPrefixPattern,
 } from "./perception/secret-sensitive/scanner.js";
 import { createByokInjectionScannerFactory } from "./semantic/byok-injection/scanner.js";
+import { createMemoryWriteScanner } from "./persistence/memory-write.js";
 
 /** The P0 PERCEPTION scanner catalog in priority order (ARCHITECTURE §6). */
 export function defaultScanners(
@@ -24,6 +25,7 @@ export function defaultScanners(
 ): SecurityScanner[] {
   return [
     createSecretSensitiveScanner(options.secretPatterns),
+    createMemoryWriteScanner(),
     createEncodedPayloadScanner(),
     createUnicodeInvisibleScanner(),
     createHiddenDomScanner(),
@@ -54,7 +56,10 @@ export {
   createFileEffectIntegrityScanner,
   createSecretSensitiveScanner,
   createByokInjectionScannerFactory,
+  createMemoryWriteScanner,
 };
+
+export { MEMORY_WRITE_SCAN_LIMITS } from "./persistence/memory-write.js";
 
 export { BYOK_INJECTION_LIMITS } from "./semantic/byok-injection/scanner.js";
 export type { ByokInjectionScannerOptions } from "./semantic/byok-injection/scanner.js";
@@ -95,9 +100,10 @@ export {
   decodeHex,
   decodeUrlEncoded,
   decodeHtmlEntities,
+  decodeUnicodeEscapes,
   decodeIterative,
 } from "./normalize/decoders.js";
 export type { DecodeOutcome } from "./normalize/decoders.js";
-export { stripZeroWidth, foldHomoglyphs, fold } from "./normalize/fold.js";
+export { stripZeroWidth, foldHomoglyphs, foldLeetspeak, fold } from "./normalize/fold.js";
 export { DEFAULT_DECODE_LIMITS } from "./normalize/limits.js";
 export type { DecodeLimits } from "./normalize/limits.js";

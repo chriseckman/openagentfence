@@ -110,6 +110,27 @@ describe("trace event validation", () => {
           reasons: ["sensitive_value_in_egress"],
         },
       ],
+      [
+        "memory_write",
+        {
+          allowed: true,
+          contentHash: "a".repeat(64),
+          sensitivity: "sensitive",
+          markers: ["instruction_removed"],
+          provenance: { trust: "web", origin: "https://a.example" },
+        },
+      ],
+      [
+        "memory_read",
+        {
+          allowed: true,
+          contentHash: "a".repeat(64),
+          sensitivity: "sensitive",
+          markers: ["instruction_removed"],
+          storedProvenance: { trust: "web", origin: "https://a.example" },
+          releasedProvenance: { trust: "memory", origin: "https://a.example" },
+        },
+      ],
       ["session_end", { risk: "NORMAL", score: 0 }],
     ];
     for (const [kind, data] of cases) {
@@ -130,6 +151,19 @@ describe("trace event validation", () => {
           verdict: "allow",
           inspectedBytes: -1,
           matchCount: 0,
+        }),
+      ).ok,
+    ).toBe(false);
+    expect(validateTraceEvent(event("memory_write", { allowed: false })).ok).toBe(false);
+    expect(validateTraceEvent(event("memory_read", { allowed: true })).ok).toBe(false);
+    expect(
+      validateTraceEvent(
+        event("egress_inspection", {
+          sink: "message",
+          verdict: "block",
+          inspectedBytes: 8,
+          matchCount: 1,
+          sources: [{ fingerprint: "not-sha256", provenance: { trust: "web" } }],
         }),
       ).ok,
     ).toBe(false);

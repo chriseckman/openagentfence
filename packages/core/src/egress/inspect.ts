@@ -3,9 +3,11 @@ import { validateDataProvenance } from "../contracts/provenance.js";
 import { REASON_CODES, type ReasonCode } from "../policy/reasons.js";
 import { EGRESS_SINKS, type EgressPayload } from "./payload.js";
 import { MAX_EGRESS_VALUE_BYTES } from "./match.js";
+import type { SourceValueEvidence } from "../provenance/value-registry.js";
 
 export interface EgressMatchResult {
   readonly fingerprints: readonly string[];
+  readonly sources?: readonly SourceValueEvidence[];
   readonly incomplete: boolean;
 }
 
@@ -14,6 +16,8 @@ export interface EgressInspection {
   readonly reasons: readonly ReasonCode[];
   readonly inspectedBytes: number;
   readonly matchCount: number;
+  /** Fingerprint + provenance only; never the matched raw value. */
+  readonly matchedSources?: readonly SourceValueEvidence[];
 }
 
 /** Provider/adapter-neutral interception interface for future proxy integrations. */
@@ -45,7 +49,7 @@ export function createEgressInspector(options: EgressInspectorOptions): EgressIn
       if (matched.incomplete || isAborted(signal)) return incomplete(payload.byteLength);
       const destinationOrigin = originOf(payload.destination);
       if (destinationOrigin === null && matched.fingerprints.length > 0) {
-        return blocked(payload.byteLength, matched.fingerprints.length);
+        return blocked(payload.byteLength, matched.fingerprints.length, matched.sources);
       }
       if (
         destinationOrigin !== null &&
@@ -59,13 +63,16 @@ export function createEgressInspector(options: EgressInspectorOptions): EgressIn
             ),
         )
       ) {
-        return blocked(payload.byteLength, matched.fingerprints.length);
+        return blocked(payload.byteLength, matched.fingerprints.length, matched.sources);
       }
       return {
         verdict: "allow",
         reasons: [],
         inspectedBytes: payload.byteLength,
         matchCount: matched.fingerprints.length,
+        ...(matched.sources !== undefined && matched.sources.length > 0
+          ? { matchedSources: matched.sources }
+          : {}),
       };
     },
   };
@@ -99,11 +106,16 @@ function incomplete(bytes: number): EgressInspection {
   };
 }
 
-function blocked(bytes: number, matchCount: number): EgressInspection {
+function blocked(
+  bytes: number,
+  matchCount: number,
+  matchedSources?: readonly SourceValueEvidence[],
+): EgressInspection {
   return {
     verdict: "block",
     reasons: [REASON_CODES.sensitive_value_in_egress],
     inspectedBytes: bytes,
     matchCount,
+    ...(matchedSources !== undefined && matchedSources.length > 0 ? { matchedSources } : {}),
   };
 }

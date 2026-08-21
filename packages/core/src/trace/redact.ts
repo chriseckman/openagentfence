@@ -54,27 +54,65 @@ export interface Redactor {
   redact(input: string): RedactedEvidence;
 }
 
+export const DEFAULT_REDACTION_LIMITS = Object.freeze({
+  maxValues: 256,
+  maxTotalFormBytes: 4 * 1024 * 1024,
+});
+
+export interface RedactionRegistryLimits {
+  readonly maxValues: number;
+  readonly maxTotalFormBytes: number;
+}
+
 /**
  * Registry of secret values that must never appear in output (INV-05). The
  * trace writer, finding serializer, and event emitter all redact through a
- * single shared registry. Values are added only from the application
- * (TB1); page content never registers secrets.
+ * single shared registry. Values are added from trusted application input
+ * and from bounded deterministic sensitive-value detections; neither values
+ * nor normalized forms are serializable through this API.
  */
 export class RedactionRegistry implements Redactor {
   private readonly exact = new Set<string>();
   private readonly needles: string[] = [];
   private readonly hashes = new Set<string>();
   private readonly egressNeedles = new Map<string, Set<string>>();
+  private totalFormBytes = 0;
+  private exhausted = false;
 
-  registerSecret(value: string): void {
+  constructor(private readonly limits: RedactionRegistryLimits = DEFAULT_REDACTION_LIMITS) {
+    if (!Number.isInteger(limits.maxValues) || limits.maxValues < 1) {
+      throw new TypeError("redaction registry maxValues must be a positive integer");
+    }
+    if (!Number.isInteger(limits.maxTotalFormBytes) || limits.maxTotalFormBytes < 1) {
+      throw new TypeError("redaction registry maxTotalFormBytes must be a positive integer");
+    }
+  }
+
+  registerSecret(value: string): boolean {
     if (value.length === 0) {
-      return;
+      return true;
     }
     if (this.exact.has(value)) {
-      return;
+      return true;
+    }
+    const redactionForms = [value, ...secretRedactionForms(value)].filter(
+      (form, index, forms) => form.length > 0 && forms.indexOf(form) === index,
+    );
+    const egressForms = egressMatchForms(value);
+    const formBytes = [...redactionForms, ...egressForms].reduce(
+      (total, form) => total + Buffer.byteLength(form, "utf8"),
+      0,
+    );
+    if (
+      this.exhausted ||
+      this.exact.size >= this.limits.maxValues ||
+      this.totalFormBytes + formBytes > this.limits.maxTotalFormBytes
+    ) {
+      this.exhausted = true;
+      return false;
     }
     this.exact.add(value);
-    for (const form of [value, ...secretRedactionForms(value)]) {
+    for (const form of redactionForms) {
       if (form.length > 0 && !this.needles.includes(form)) {
         this.needles.push(form);
       }
@@ -82,7 +120,7 @@ export class RedactionRegistry implements Redactor {
     this.needles.sort((a, b) => b.length - a.length);
     this.hashes.add(hash(value));
     const fingerprint = hash(value);
-    for (const form of egressMatchForms(value)) {
+    for (const form of egressForms) {
       let fingerprints = this.egressNeedles.get(form);
       if (fingerprints === undefined) {
         fingerprints = new Set();
@@ -90,6 +128,8 @@ export class RedactionRegistry implements Redactor {
       }
       fingerprints.add(fingerprint);
     }
+    this.totalFormBytes += formBytes;
+    return true;
   }
 
   /** True when the given value has been registered as a secret. */
@@ -124,7 +164,11 @@ export class RedactionRegistry implements Redactor {
     readonly fingerprints: readonly string[];
     readonly incomplete: boolean;
   } {
-    if (signal?.aborted === true || Buffer.byteLength(value, "utf8") > MAX_EGRESS_VALUE_BYTES) {
+    if (
+      this.exhausted ||
+      signal?.aborted === true ||
+      Buffer.byteLength(value, "utf8") > MAX_EGRESS_VALUE_BYTES
+    ) {
       return { fingerprints: [], incomplete: true };
     }
     const matches = new Set<string>();
@@ -133,6 +177,19 @@ export class RedactionRegistry implements Redactor {
       if (value.includes(needle)) for (const fingerprint of fingerprints) matches.add(fingerprint);
     }
     return { fingerprints: [...matches], incomplete: false };
+  }
+
+  get incomplete(): boolean {
+    return this.exhausted;
+  }
+
+  clear(): void {
+    this.exact.clear();
+    this.needles.length = 0;
+    this.hashes.clear();
+    this.egressNeedles.clear();
+    this.totalFormBytes = 0;
+    this.exhausted = false;
   }
 }
 

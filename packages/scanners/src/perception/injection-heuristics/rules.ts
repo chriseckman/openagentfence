@@ -11,6 +11,8 @@ export interface InjectionMatch {
   readonly ruleId: string;
   readonly category: string;
   readonly evidence: string;
+  readonly start: number;
+  readonly end: number;
 }
 
 /** English rule pack (OAF-BROWSER-010). Rules are inert data, never executable code. */
@@ -116,6 +118,8 @@ export function scanInjection(
         ruleId: rule.id,
         category: rule.category,
         evidence: text.slice(start, end),
+        start: m.index,
+        end: m.index + m[0].length,
       });
       if (m[0].length === 0) {
         pattern.lastIndex += 1;

@@ -97,6 +97,10 @@ export function classifyNode(node: ProbeNode): ClassifiedNode {
     return { node, visibility: "CSS_GENERATED", reasons: ["display-contents"] };
   }
 
+  if (isCollapsedTransform(node.transform)) {
+    return { node, visibility: "HIDDEN", reasons: ["collapsed-transform"] };
+  }
+
   if (node.pseudoBefore !== null || node.pseudoAfter !== null) {
     return { node, visibility: "CSS_GENERATED", reasons: ["pseudo-content"] };
   }
@@ -106,10 +110,12 @@ export function classifyNode(node: ProbeNode): ClassifiedNode {
   }
 
   const onePixelClip =
-    node.dimensions.width <= 1 &&
-    node.dimensions.height <= 1 &&
-    (node.role !== null || node.ariaLabel !== null) &&
-    node.text.trim().length > 0;
+    node.dimensions.width <= 2 &&
+    node.dimensions.height <= 2 &&
+    (node.role !== null ||
+      node.ariaLabel !== null ||
+      node.text.trim().length > 0 ||
+      (node.clipPath !== null && node.clipPath !== "none"));
   if (onePixelClip) {
     return { node, visibility: "ACCESSIBILITY_ONLY", reasons: ["clip-pattern"] };
   }
@@ -122,11 +128,26 @@ export function classifyNode(node: ProbeNode): ClassifiedNode {
     };
   }
 
-  if (node.dimensions.width < 2 || node.dimensions.height < 2) {
-    return { node, visibility: "VISIBLE_LOW_CONFIDENCE", reasons: ["tiny"] };
+  if (
+    node.dimensions.width < 2 ||
+    node.dimensions.height < 2 ||
+    (node.fontSize !== null && Number.parseFloat(node.fontSize) <= 1)
+  ) {
+    return { node, visibility: "ACCESSIBILITY_ONLY", reasons: ["tiny"] };
   }
 
   return { node, visibility: "VISIBLE", reasons: [] };
+}
+
+function isCollapsedTransform(transform: string | null): boolean {
+  if (transform === null || transform === "none") return false;
+  const values = transform
+    .match(/^matrix\(([^)]+)\)$/u)?.[1]
+    ?.split(",")
+    .map(Number);
+  return (
+    values !== undefined && values.length >= 4 && values.slice(0, 4).every((value) => value === 0)
+  );
 }
 
 /** Approximate off-screen detection: extreme positioning (no viewport in probe). */

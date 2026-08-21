@@ -6,6 +6,8 @@ import { EGRESS_SINKS } from "../egress/payload.js";
 import { ENFORCEMENT_LEVELS, NETWORK_SURFACES } from "../network/capabilities.js";
 import { NETWORK_INITIATORS } from "../network/initiator.js";
 import { NETWORK_VERDICTS } from "../network/decision.js";
+import { MEMORY_GUARD_REASONS } from "../memory/guard.js";
+import { MEMORY_MARKERS, MEMORY_SENSITIVITIES } from "../memory/item.js";
 
 /**
  * Runtime validation for trace documents and events (ARCHITECTURE §14,
@@ -129,12 +131,80 @@ export function validateTraceEvent(input: unknown): TraceValidationResult {
       break;
     }
     case "taint_activation": {
-      if (data["source"] !== "observation" && data["source"] !== "tool_output") {
+      if (
+        data["source"] !== "observation" &&
+        data["source"] !== "tool_output" &&
+        data["source"] !== "memory_read"
+      ) {
         fail(errors, "taint_activation.source must identify a released untrusted surface");
       }
       const provenance = validateDataProvenance(data["provenance"]);
       if (provenance === null || provenance.trust !== "web") {
         fail(errors, "taint_activation.provenance must be valid web-trust provenance");
+      }
+      break;
+    }
+    case "memory_write":
+    case "memory_read": {
+      if (typeof data["allowed"] !== "boolean") {
+        fail(errors, `${kind}.allowed must be boolean`);
+      }
+      if (
+        data["reasons"] !== undefined &&
+        (!Array.isArray(data["reasons"]) ||
+          !data["reasons"].every(
+            (reason) =>
+              typeof reason === "string" &&
+              (MEMORY_GUARD_REASONS as readonly string[]).includes(reason),
+          ))
+      ) {
+        fail(errors, `${kind}.reasons must contain stable memory guard reasons`);
+      }
+      if (
+        data["contentHash"] !== undefined &&
+        (typeof data["contentHash"] !== "string" || !/^[a-f0-9]{64}$/.test(data["contentHash"]))
+      ) {
+        fail(errors, `${kind}.contentHash must be SHA-256`);
+      }
+      if (data["sensitivity"] !== undefined && !isIn(data["sensitivity"], MEMORY_SENSITIVITIES)) {
+        fail(errors, `${kind}.sensitivity must be known`);
+      }
+      if (
+        data["markers"] !== undefined &&
+        (!Array.isArray(data["markers"]) ||
+          data["markers"].length > 16 ||
+          !data["markers"].every(
+            (marker) =>
+              typeof marker === "string" && (MEMORY_MARKERS as readonly string[]).includes(marker),
+          ))
+      ) {
+        fail(errors, `${kind}.markers must be bounded and known`);
+      }
+      for (const key of ["provenance", "storedProvenance", "releasedProvenance"] as const) {
+        if (data[key] !== undefined && validateDataProvenance(data[key]) === null) {
+          fail(errors, `${kind}.${key} must be valid bounded provenance`);
+        }
+      }
+      if (
+        data["allowed"] === false &&
+        (!Array.isArray(data["reasons"]) || data["reasons"].length === 0)
+      ) {
+        fail(errors, `${kind} denied events require a stable reason`);
+      }
+      if (data["allowed"] === true) {
+        if (typeof data["contentHash"] !== "string") {
+          fail(errors, `${kind} allowed events require contentHash`);
+        }
+        if (kind === "memory_write" && validateDataProvenance(data["provenance"]) === null) {
+          fail(errors, "memory_write allowed events require provenance");
+        }
+        if (
+          kind === "memory_read" &&
+          (validateDataProvenance(data["storedProvenance"]) === null ||
+            validateDataProvenance(data["releasedProvenance"]) === null)
+        ) {
+          fail(errors, "memory_read allowed events require stored and released provenance");
+        }
       }
       break;
     }
@@ -190,6 +260,28 @@ export function validateTraceEvent(input: unknown): TraceValidationResult {
           !data["reasons"].every((reason) => typeof reason === "string" && isReasonCode(reason)))
       ) {
         fail(errors, "egress_inspection.reasons must contain stable reason codes");
+      }
+      if (data["sources"] !== undefined) {
+        if (!Array.isArray(data["sources"]) || data["sources"].length > 64) {
+          fail(errors, "egress_inspection.sources must be a bounded array");
+        } else {
+          for (const source of data["sources"]) {
+            if (typeof source !== "object" || source === null || Array.isArray(source)) {
+              fail(errors, "egress_inspection source must be an object");
+              continue;
+            }
+            const record = source as Record<string, unknown>;
+            if (
+              typeof record["fingerprint"] !== "string" ||
+              !/^[a-f0-9]{64}$/.test(record["fingerprint"])
+            ) {
+              fail(errors, "egress_inspection source fingerprint must be SHA-256");
+            }
+            if (validateDataProvenance(record["provenance"]) === null) {
+              fail(errors, "egress_inspection source provenance must be valid");
+            }
+          }
+        }
       }
       break;
     }

@@ -5,9 +5,15 @@ peer dependency; `@openagentfence/core` never imports it (ADR-0002).
 
 ### Verified v4 behavior
 
+The supported and tested SDK version is exactly Stagehand 4.0.1 on Node.js
+22.18.0 or newer. The peer range is intentionally exact until another minor
+passes the same conformance and recorded-scenario suite.
+
 - `observe()` responses are strictly bounded and normalized into conservative
   `CanonicalAction` candidates.
-- `act()` executes only the exact structured candidate after one deterministic
+- `act()` requires the application to construct Stagehand with `selfHeal:
+  false` and attest that setting to the wrapper. It executes only the exact,
+  deeply frozen structured candidate after one deterministic
   state-binding/revalidation cycle. Core atomically consumes the session-issued
   authorization immediately before the captured structured candidate reaches
   Stagehand; no parallel Stagehand authority remains. A wrapper without a
@@ -26,7 +32,7 @@ peer dependency; `@openagentfence/core` never imports it (ADR-0002).
 
 ### Surface coverage, Stagehand 4.0.1 development conformance
 
-`observe` is read-only; `act`, `extract`, and screenshot-first are hooked when
+`observe` is read-only and bounded to 64 candidates; `act`, `extract`, and screenshot-first are hooked when
 their required adapters/hooks are supplied. Page controls, agent/batch, WebMCP
 listing, and WebMCP invocation are explicitly disabled with a typed
 `StagehandSecurityError` and zero framework calls. No Stagehand network surface
@@ -57,8 +63,12 @@ No Stagehand fill/type/header/file/message sink currently claims raw-secret
 substitution. A future claim requires an independently state-bound public
 locator bridge with zero model calls and leak conformance.
 
-The public peer range is `^4.0.0`; compile-time conformance is pinned to 4.0.1.
+The public peer range and compile-time conformance are pinned to `4.0.1`.
 Raw framework access remains an application escape hatch and must be recorded
 by the owning `SecuritySession`.
+
+The closed, bounded offline scenario fixture and runner are documented in
+[`docs/stagehand.md`](../../docs/stagehand.md). They cover 24 recorded corpus-linked
+scenarios and use no live model, credential, or external network call.
 
 **Status: not yet published.**

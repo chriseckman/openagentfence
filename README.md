@@ -19,10 +19,10 @@ deterministic controls still restrict what the agent can see, disclose, and
 do** — what it may perceive, which actions it may execute, which origins it
 may reach, where secrets may go, and what it may remember.
 
-> **Status: early development.** M0 is complete. M1 is reopened for the PRD
-> v0.9 contract backfill, and M2 remains open while its browser-adapter
-> security and conformance work is completed. No packages are published yet,
-> and nothing below should be read as production-ready. See [Status](#status).
+> **Status: pre-release.** M0-M6 P0 implementation is complete with local
+> validation; M7-M8 verification and release work remains active. No packages
+> are published yet, and nothing below should be
+> read as production-ready. See [Status](#status).
 
 ---
 
@@ -41,7 +41,8 @@ MEMORY  -> FUTURE SESSION  what web-derived content may become "memory"
 
 ## Key capabilities
 
-All capabilities are **planned** unless marked otherwise (see [Status](#status)).
+The table distinguishes locally implemented M0-M6 behavior from active and
+deferred work. See [Status](#status) for release qualification.
 
 | Area | Capability |
 |------|------------|
@@ -54,23 +55,24 @@ All capabilities are **planned** unless marked otherwise (see [Status](#status))
 | Data | Sensitive-data and egress controls: destination-aware DLP for URLs, forms, uploads, and routed requests |
 | Data | Provenance and taint tracking: web-derived data stays marked untrusted through transformation |
 | Session | Session risk containment: `NORMAL -> RESTRICTED -> READ_ONLY -> QUARANTINED`, budgets against denial-of-wallet, approval gates |
-| Memory | Memory write/read guard so stored web content retains provenance and re-enters only as untrusted data |
+| Memory | Minimum memory write/read guard: stored web content is scanned and integrity-bound, retains provenance, and re-enters only as tainted untrusted data |
 | Operations | Local-first operation: deterministic scanners need no model, no cloud, no telemetry |
-| Operations | BYOK guard models: OpenAI-compatible, Anthropic, Google, xAI, OpenCode, Ollama (default local provider), or a custom callback |
+| Operations | BYOK guard models: OpenAI-compatible, Anthropic, Google, xAI, Ollama (local-first transport), or a custom callback; OpenCode 1.18.18 is a typed-unavailable optional surface |
 | Integrations | Stagehand (first-class) and Playwright (independent) adapters; framework-neutral core |
 | Audit | Redacted structured security traces with machine-readable reasons for every block; replay is planned as P1 |
-| Testing | Built-in adversarial testing: attack-page corpus, benchmark runner, CI regression gate, Promptfoo example |
+| Testing | Local fixture server, adaptive-ready executable corpus, recorded Stagehand scenarios, offline Promptfoo comparison, reproducible property/invariant gates, and a pinned guarded-versus-unguarded benchmark runner; the full CLI and M8 measurement gates remain active |
 
 ## Status
 
 | State | Items |
 |-------|-------|
-| **Available** | Product requirements document, architecture, threat model, implementation plan, ADRs, security policy, contributor guides. |
-| **In development** | M0 is complete. The original M1 contracts are implemented, but M1 is reopened for `ActionIntent`, trusted-intent, network-mutation, and bounded-provider contract backfills. M2 has a vertical slice and an exact-structured-action Stagehand defect fix. M3 now has canonical origin/private-network/scheme rules and an opt-in Playwright route boundary for initial navigation and fetch; redirect follow-up hops remain observed-only because Playwright does not route them. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). |
-| **Planned (v0.1)** | State-bound `ActionIntent` revalidation (after ADR-0010 acceptance), Stagehand and Playwright conformance, DOM/ARIA/hidden-content scanners, encoded-payload normalizer, three-tier detector contracts, bounded guard execution, Network Mutation Guard contracts and enforceable hooks, secret handles and in-memory vault, origin/SSRF policy, Action Guard, form/upload/download policy, session risk and restricted mode, budgets, approval handler API, memory write/read enforcement, structured traces, YAML policy, and an adaptive-ready attack corpus. Visual attacks receive action-side containment, not pixel/DOM discrepancy detection. |
+| **Available locally (M0-M6)** | Core contracts and traces; policy and deterministic Action Guard; Playwright/Stagehand fail-closed adapters; provenance carrier, taint floor, bounded coarse source-to-sink registry, and guarded memory write/read lifecycle; vault, secret scanning/resolution, DLP and Network Mutation Guard; offline-tested provider adapters, tier router, and opt-in BYOK scanner. Capability matrices identify enforced, observed-only, and unavailable surfaces. |
+| **In development (M7-M8)** | Remaining adversarial corpus/invariant/benchmark gates, P0 CLI, API/docs freeze, and release hardening. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). |
+| **Required before v0.1** | M7-M8 P0 gates, current benchmark and false-positive evidence, complete release validation, and separately authorized/verifiable external publication. |
 | **Deferred (v0.2+)** | Visual guard model and screenshot/DOM discrepancy detection or semantic matching, data-flow graph, signed receipts, network proxy, document parsing, enterprise DLP, reputation feeds, plugin marketplace, browser extension, hosted dashboard, Python SDK. |
 
-There are no published benchmark results. Any numbers that appear in the PRD
+There are no published benchmark results. The report format and offline smoke
+runner are documented in [docs/benchmarks.md](docs/benchmarks.md). Any numbers that appear in the PRD
 are illustrative targets, not measurements. Claims will be made only when
 reproducible (pinned framework/model versions and corpus hash).
 
@@ -103,19 +105,21 @@ reproducible (pinned framework/model versions and corpus hash).
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Example API (proposed)
+## Current API (pre-release)
 
-The API below is the **intended** TypeScript surface from the PRD. It is
-marked *proposed* until implemented and will carry `unstable_` /
-`@experimental` markers until declared stable.
+The adapter packages own their secure wrappers; `core` remains framework
+neutral and does not expose a framework-specific `firewall.wrap()` method.
 
 ```typescript
 import { OpenAgentFence } from "@openagentfence/core";
-import { stagehandAdapter } from "@openagentfence/stagehand";
+import { chromium } from "playwright";
+import { playwrightAdapter, wrapPage } from "@openagentfence/playwright";
 import { loadPolicy } from "@openagentfence/policy";
 
+const browser = await chromium.launch();
+const page = await browser.newPage();
 const firewall = new OpenAgentFence({
-  adapter: stagehandAdapter(stagehand),
+  adapter: playwrightAdapter(page),
   policy: await loadPolicy("./openagentfence.yml"),
 });
 
@@ -134,13 +138,11 @@ const session = await firewall.start({
 session.on("finding", (f) => console.warn(f));
 session.on("decision", (d) => console.log(d.verdict, d.reasons));
 
-// The secure wrapper observes candidates, authorizes exactly one structured
-// action, and passes that same object to Stagehand v4 act(). It fails closed
-// rather than asking Stagehand to infer another action from this instruction.
-const secure = firewall.wrap(stagehand);
-await secure.act("continue to results");
+const secure = wrapPage(session, page);
+await secure.goto("https://travel.example");
 
 const trace = await session.end();
+await browser.close();
 ```
 
 Optional BYOK guard model (external network call, opt-in):
@@ -148,12 +150,12 @@ Optional BYOK guard model (external network call, opt-in):
 ```typescript
 import { guardProvider } from "@openagentfence/providers";
 
-// Ollama is the default local provider; the recommended model will be
-// documented once measured against the security corpus.
+// Ollama is the local-first transport. The application selects a model;
+// OpenAgentFence makes no model recommendation without measured evidence.
 const firewall = new OpenAgentFence({
-  adapter: stagehandAdapter(stagehand),
+  adapter: playwrightAdapter(page),
   policy: await loadPolicy("./openagentfence.yml"),
-  guardModel: guardProvider("ollama", { model: "<recommended-local-model>" }),
+  guardModel: guardProvider("ollama", { model: "<application-selected-model>" }),
 });
 ```
 

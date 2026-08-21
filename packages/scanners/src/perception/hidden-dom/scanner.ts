@@ -38,7 +38,10 @@ export function createHiddenDomScanner(): ReturnType<typeof defineScanner> {
         if (!isHiddenClass(c.visibility)) {
           continue;
         }
-        const text = c.node.text.trim();
+        const text = [c.node.text, c.node.pseudoBefore, c.node.pseudoAfter]
+          .filter((value): value is string => value !== null)
+          .join(" ")
+          .trim();
         if (text.length === 0) {
           continue;
         }
@@ -71,5 +74,6 @@ export function createHiddenDomScanner(): ReturnType<typeof defineScanner> {
         sanitized: provenanced(sanitized, ctx.provenance),
       };
     },
+    priority: 100,
   });
 }

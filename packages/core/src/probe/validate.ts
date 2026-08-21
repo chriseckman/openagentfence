@@ -1,5 +1,5 @@
+import type { BoundingBox } from "../contracts/finding.js";
 import type {
-  BoundingBox,
   ProbeLink,
   ProbeMetadata,
   ProbeNode,

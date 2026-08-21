@@ -8,15 +8,16 @@ This document records research and recommendations; it is not a source of
 product requirements or an architecture decision. The source-of-truth order
 in [AGENTS.md](../AGENTS.md) applies. Adopted recommendations are expressed in
 the PRD, architecture, threat model, accepted ADRs, and implementation plan.
-Proposed ADR-0010 is not an accepted decision and gates the implementation
-tasks that depend on state-bound authorization.
+ADR-0010 was subsequently Accepted and its state-bound authorization work is
+implemented. The dated research disposition below is retained as design
+history; current status comes from the normative documents and Accepted ADRs.
 
 ## Review disposition (2026-08-15)
 
 | Recommendation | Disposition |
 |---|---|
 | Stagehand authorize-A/execute-B mismatch | Fixed as an M2 security defect: the wrapper executes the one authorized structured v4 action or fails closed. |
-| State-bound `ActionIntent` and immediate revalidation | Adopted in PRD v0.9 and Proposed ADR-0010; implementation remains gated on ADR acceptance. |
+| State-bound `ActionIntent` and immediate revalidation | Adopted in PRD v0.9 and Accepted ADR-0010; implemented and covered by adapter conformance tests. |
 | Compromised/misclassified guard output | Adopted as INV-20 and an architecture contract. Probabilistic results are schema-validated untrusted evidence and cannot grant authority. |
 | Three-tier detector architecture | Adopted: deterministic Tier 0 is P0; Tier 1 and Tier 2 contracts are P0; concrete specialized/BYOK integrations are P1 unless separately required. |
 | Network Mutation Guard | P0 contract, adapter capability reporting, and enforceable-hook work adopted; a full proxy remains deferred. |
@@ -30,9 +31,9 @@ tasks that depend on state-bound authorization.
 | Full proxy, JIT capability expansion, screenshot/DOM semantic comparison, full data-flow graph, signed receipts | Deferred beyond the v0.1 critical path. |
 | Additional advisory-guard/tier/network/critic ADRs | Not added: ADR-0003 and the revised normative contracts already decide those boundaries. ADR-0010 is the only new decision because state-bound authorization changes the executor contract. |
 
-Open gates are ADR-0010 acceptance and empirical adapter capability tests for
-each network/Stagehand surface. Unsupported hooks must be reported as
-enforcement gaps; they may not be counted as covered.
+The former ADR-0010 gate is closed. Empirical adapter capability evidence is
+recorded for the pinned framework versions; unsupported hooks remain explicit
+enforcement gaps and are not counted as covered.
 
 > **Core conclusion:** Prompt injection should not be treated as a problem that can be solved by a single detector, classifier, system prompt, or guard LLM. Detection should reduce exposure and identify likely attacks, but deterministic controls must constrain what an agent can see, disclose, and do even when every probabilistic detector fails.
 

@@ -166,9 +166,10 @@ report
      credit)
 ```
 
-Every fixed vulnerability results in a regression fixture. This is a hard
-rule of the project (see [CONTRIBUTING.md](CONTRIBUTING.md) and
-[AGENTS.md](AGENTS.md)).
+Every fixed vulnerability results in a strengthened
+[security invariant test](docs/invariant-suite.md) or a minimized corpus
+regression fixture. This is a hard rule of the project (see
+[CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)).
 
 ## Project security practices
 

@@ -47,7 +47,18 @@ export function foldHomoglyphs(input: string): string {
   return out;
 }
 
+/** Conservative common leetspeak folding used only for security analysis. */
+export function foldLeetspeak(input: string): string {
+  return input
+    .replaceAll("0", "o")
+    .replaceAll("1", "i")
+    .replaceAll("3", "e")
+    .replaceAll("4", "a")
+    .replaceAll("5", "s")
+    .replaceAll("7", "t");
+}
+
 /** NFKC normalization + zero-width strip + homoglyph fold. */
 export function fold(input: string): string {
-  return foldHomoglyphs(stripZeroWidth(input.normalize("NFKC")));
+  return foldLeetspeak(foldHomoglyphs(stripZeroWidth(input.normalize("NFKC"))));
 }

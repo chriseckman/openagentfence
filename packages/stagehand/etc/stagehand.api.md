@@ -20,7 +20,7 @@ export function normalizeObserveResult(result: unknown): CanonicalAction;
 export const STAGEHAND_NETWORK_CAPABILITIES: Readonly<Record<"upload" | "download" | "navigation" | "redirect" | "form" | "fetch" | "headers" | "websocket" | "send_beacon" | "service_worker" | "popup" | "webmcp", "enforced" | "observed_only" | "unavailable">>;
 
 // @public
-export const STAGEHAND_SECURITY_ERROR_CODES: readonly ["invalid_observe_response", "no_authorized_action", "ambiguous_authorized_action", "authorized_action_not_executable", "state_revalidation_unavailable", "action_intent_expired", "action_intent_mismatch", "extract_unavailable", "untrusted_output_invalid", "untrusted_output_oversized", "unsupported_file_effect", "unsupported_secret_sink", "disabled_path"];
+export const STAGEHAND_SECURITY_ERROR_CODES: readonly ["invalid_observe_response", "no_authorized_action", "ambiguous_authorized_action", "authorized_action_not_executable", "state_revalidation_unavailable", "action_intent_expired", "action_intent_mismatch", "extract_unavailable", "untrusted_output_invalid", "untrusted_output_oversized", "unsupported_file_effect", "unsupported_secret_sink", "unsafe_self_heal_configuration", "disabled_path"];
 
 // @public
 export const STAGEHAND_SURFACE_COVERAGE: readonly [{
@@ -94,7 +94,7 @@ export interface StagehandObserveResponse {
 
 // @public
 export interface StagehandObserveResult {
-    readonly arguments?: string[] | undefined;
+    readonly arguments?: readonly string[] | undefined;
     readonly description: string;
     readonly method?: string | undefined;
     readonly selector: string;
@@ -123,6 +123,7 @@ export type StagehandSurfaceStatus = "hooked" | "read_only" | "disabled";
 export interface StagehandWrapOptions {
     // (undocumented)
     readonly maxOutputBytes?: number;
+    readonly selfHeal?: false;
     // (undocumented)
     readonly stateResolver?: StagehandStateResolver;
 }

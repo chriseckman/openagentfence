@@ -123,6 +123,14 @@ export async function runPhase(
 
   if (oversized) {
     failures.push({ scanner: "observation", kind: "oversized" });
+    results.push({
+      scanner: "observation",
+      kind: "deterministic",
+      verdict: "warn",
+      severity: "medium",
+      findings: [unavailableFinding("observation", ctx, "oversized", "warn")],
+      metadata: { failureKind: "oversized" },
+    });
   }
 
   for (const outcome of [...deterministicOutcomes, ...tier1Outcomes, ...tier2Outcomes]) {

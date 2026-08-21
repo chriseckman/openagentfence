@@ -5,7 +5,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18.0"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -34,11 +34,13 @@
   },
   "devDependencies": {
     "@browserbasehq/stagehand": "4.0.1",
+    "@openagentfence/scanners": "workspace:*",
+    "@openagentfence/testing": "workspace:*",
     "eslint": "^9.15.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   },
   "peerDependencies": {
-    "@browserbasehq/stagehand": "^4.0.0"
+    "@browserbasehq/stagehand": "4.0.1"
   }
 }

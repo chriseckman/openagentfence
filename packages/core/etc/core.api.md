@@ -101,7 +101,7 @@ export interface AdapterEvent {
 export interface AdapterEventSink {
     // (undocumented)
     onDownload(event: AdapterEvent): void;
-    onEgressPayload?(payload: EgressPayload, signal?: AbortSignal): EgressInspection;
+    onEgressPayload?(payload: EgressPayload, signal?: AbortSignal): EgressInspection | Promise<EgressInspection>;
     // (undocumented)
     onNavigation(event: AdapterEvent): void;
     // (undocumented)
@@ -388,6 +388,17 @@ export function createRiskAggregator(): RiskAggregator;
 // @public
 export function createScopedSecretResolver(options: ScopedSecretResolverOptions): ScopedSecretResolver;
 
+// @public
+export function createSourceSinkCheck(options: SourceSinkCheckOptions): SourceSinkCheck;
+
+// @public (undocumented)
+export function createStoredMemoryItem(input: {
+    readonly content: string;
+    readonly provenance: DataProvenance;
+    readonly sensitivity: MemorySensitivity;
+    readonly markers?: readonly MemoryMarker[];
+}): StoredMemoryItem;
+
 // @public (undocumented)
 export interface CrossOriginExfiltrationEvaluation {
     // (undocumented)
@@ -460,13 +471,32 @@ export const DEFAULT_NETWORK_CAPABILITIES: NetworkCapabilities;
 export const DEFAULT_PROBE_OPTIONS: Required<ProbeBuildOptions>;
 
 // @public (undocumented)
+export const DEFAULT_REDACTION_LIMITS: Readonly<{
+    maxValues: 256;
+    maxTotalFormBytes: number;
+}>;
+
+// @public (undocumented)
 export const DEFAULT_RESOURCE_LIMITS: ResourceLimits;
 
 // @public
 export const DEFAULT_RISK_POLICY: RiskPolicy;
 
+// @public (undocumented)
+export const DEFAULT_SOURCE_VALUE_LIMITS: Readonly<{
+    maxEntries: 256;
+    maxProvenancesPerEntry: 8;
+    maxMatchedSources: 64;
+    maxTotalFormBytes: number;
+    maxValueBytes: number;
+    ttlMs: number;
+}>;
+
 // @public
 export function defaultTierForKind(kind: "deterministic" | "semantic"): DetectorTier;
+
+// @public
+export function definePluginScanner(plugin: PluginSecurityScannerDefinition): Readonly<SecurityScanner>;
 
 // @public
 export function defineScanner(scanner: SecurityScanner): Readonly<SecurityScanner>;
@@ -565,6 +595,7 @@ export interface EgressInspection {
     readonly inspectedBytes: number;
     // (undocumented)
     readonly matchCount: number;
+    readonly matchedSources?: readonly SourceValueEvidence[];
     // (undocumented)
     readonly reasons: readonly ReasonCode[];
     // (undocumented)
@@ -596,6 +627,8 @@ export interface EgressMatchResult {
     readonly fingerprints: readonly string[];
     // (undocumented)
     readonly incomplete: boolean;
+    // (undocumented)
+    readonly sources?: readonly SourceValueEvidence[];
 }
 
 // @public
@@ -954,8 +987,68 @@ export function leastTrust(a: TrustLevel, b: TrustLevel): TrustLevel;
 // @public
 export const MAX_EGRESS_VALUE_BYTES: number;
 
+// @public (undocumented)
+export const MAX_MEMORY_CONTENT_BYTES: number;
+
+// @public (undocumented)
+export const MAX_MEMORY_MARKERS = 16;
+
 // @public
 export function maxRiskState(a: RiskState, b: RiskState): RiskState;
+
+// @public (undocumented)
+export const MEMORY_GUARD_REASONS: readonly ["memory_item_invalid", "memory_content_hash_mismatch", "memory_scan_incomplete", "memory_bounds_exceeded", "memory_write_denied", "memory_read_denied"];
+
+// @public (undocumented)
+export const MEMORY_ITEM_SCHEMA_VERSION = "1.0.0";
+
+// @public (undocumented)
+export const MEMORY_MARKERS: readonly ["instruction_removed", "sensitive_value_replaced"];
+
+// @public (undocumented)
+export const MEMORY_SENSITIVITIES: readonly ["none", "sensitive", "secret"];
+
+// @public
+export class MemoryGuardError extends Error {
+    constructor(code: MemoryGuardReason);
+    // (undocumented)
+    readonly code: MemoryGuardReason;
+}
+
+// @public (undocumented)
+export type MemoryGuardReason = (typeof MEMORY_GUARD_REASONS)[number];
+
+// @public (undocumented)
+export function memoryItemHash(item: Pick<StoredMemoryItem, "schemaVersion" | "kind" | "content" | "provenance" | "sensitivity" | "markers">): string;
+
+// @public (undocumented)
+export type MemoryMarker = (typeof MEMORY_MARKERS)[number];
+
+// @public (undocumented)
+export function memoryReadDatum(item: StoredMemoryItem): ProvenancedDatum<string>;
+
+// @public (undocumented)
+export type MemorySensitivity = (typeof MEMORY_SENSITIVITIES)[number];
+
+// @public (undocumented)
+export interface MemoryWriteCandidate {
+    // (undocumented)
+    readonly content: string;
+    // (undocumented)
+    readonly provenance: DataProvenance;
+}
+
+// @public (undocumented)
+export interface MemoryWriteResult {
+    // (undocumented)
+    readonly allowed: boolean;
+    // (undocumented)
+    readonly findings: readonly Finding[];
+    // (undocumented)
+    readonly item?: StoredMemoryItem;
+    // (undocumented)
+    readonly reasons: readonly MemoryGuardReason[];
+}
 
 // @public
 export function mintHandle(kind: SecretHandleKind, name: string): SecretHandle;
@@ -1215,6 +1308,28 @@ export interface PluginManifest {
 }
 
 // @public
+export interface PluginSecurityScannerDefinition {
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly kind: "deterministic" | "semantic";
+    // (undocumented)
+    readonly manifest: PluginManifest;
+    // (undocumented)
+    readonly phases: readonly SecurityPhase[];
+    // (undocumented)
+    readonly priority?: number;
+    // (undocumented)
+    readonly required?: boolean;
+    // (undocumented)
+    scan(ctx: ScopedContextView): Promise<ScanResult>;
+    // (undocumented)
+    readonly tier?: DetectorTier;
+    // (undocumented)
+    readonly timeoutMs?: number;
+}
+
+// @public
 export interface PolicyDecision {
     readonly appliedSuppressions?: readonly {
         readonly rule: string;
@@ -1323,7 +1438,7 @@ export const PROBE_CONTRAST_UNSUPPORTED = true;
 export const PROBE_SCRIPT: string;
 
 // @public
-export const PROBE_SCRIPT_TEMPLATE = "(function () {\n  var maxNodes = __MAX_NODES__;\n  var maxTextLength = __MAX_TEXT_LENGTH__;\n  var maxTextBytes = __MAX_TEXT_BYTES__;\n  var maxComments = __MAX_COMMENTS__;\n  var maxMetadata = __MAX_METADATA__;\n  var maxLinks = __MAX_LINKS__;\n  var timeBudgetMs = __TIME_BUDGET__;\n  var start = Date.now();\n  var nodes = [];\n  var comments = [];\n  var totalTextBytes = 0;\n  var truncation = { nodes: false, textBytes: false, comments: false, metadata: false, links: false, time: false };\n\n  var vw = (window.innerWidth || document.documentElement.clientWidth || 0);\n  var vh = (window.innerHeight || document.documentElement.clientHeight || 0);\n\n  function budgetText(len) {\n    if (len === 0) { return ''; }\n    if (totalTextBytes + len > maxTextBytes) {\n      truncation.textBytes = true;\n      return '';\n    }\n    totalTextBytes += len;\n    return '';\n  }\n\n  var roots = document.querySelectorAll('body, body *');\n  for (var i = 0; i < roots.length; i++) {\n    if (Date.now() - start > timeBudgetMs) { truncation.time = true; break; }\n    if (nodes.length >= maxNodes) { truncation.nodes = true; break; }\n    var el = roots[i];\n    try {\n      var cs = window.getComputedStyle(el);\n      var rect = el.getBoundingClientRect();\n      var attrs = {};\n      var attrNames = ['title', 'alt', 'placeholder', 'role', 'aria-label', 'aria-description'];\n      for (var a = 0; a < attrNames.length; a++) {\n        var v = el.getAttribute(attrNames[a]);\n        if (v !== null && v !== '') {\n          budgetText(v.length);\n          attrs[attrNames[a]] = v.slice(0, maxTextLength);\n        }\n      }\n      if (el.attributes) {\n        for (var d = 0; d < el.attributes.length && Object.keys(attrs).length < 20; d++) {\n          var at = el.attributes[d];\n          if (at && at.name && at.name.indexOf('data-') === 0) {\n            budgetText((at.value || '').length);\n            attrs[at.name] = (at.value || '').slice(0, maxTextLength);\n          }\n        }\n      }\n      var rawText = directText(el);\n      budgetText(rawText.length);\n      var pseudoBefore = pseudoText(el, '::before');\n      var pseudoAfter = pseudoText(el, '::after');\n      nodes.push({\n        selector: selectorFor(el),\n        tagName: el.tagName ? el.tagName.toLowerCase() : '',\n        text: rawText.slice(0, maxTextLength),\n        display: cs.display || '',\n        visibility: cs.visibility || '',\n        opacity: parseFloat(cs.opacity || '1'),\n        ariaHidden: el.getAttribute('aria-hidden') === 'true',\n        hidden: !!el.hidden,\n        role: el.getAttribute('role'),\n        ariaLabel: el.getAttribute('aria-label'),\n        ariaDescription: el.getAttribute('aria-description'),\n        attributes: attrs,\n        dimensions: rect.width > 0 && rect.height > 0\n          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }\n          : null,\n        boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },\n        frameOrigin: (window.location && window.location.origin) || '',\n        fontSize: cs.fontSize || null,\n        color: cs.color || null,\n        backgroundColor: cs.backgroundColor || null,\n        position: cs.position || null,\n        transform: cs.transform || null,\n        clipPath: cs.clipPath || null,\n        overflow: cs.overflow || null,\n        inViewport: rect.right > 0 && rect.bottom > 0 && rect.left < vw && rect.top < vh,\n        pseudoBefore: pseudoBefore,\n        pseudoAfter: pseudoAfter\n      });\n    } catch (e) {\n      // Skip unreadable nodes; never throw out of the probe.\n    }\n  }\n\n  var meta = { title: '', meta: {}, jsonLd: [], noscript: [] };\n  meta.title = (document.title || '').slice(0, maxTextLength);\n  var metas = document.querySelectorAll('meta');\n  for (var m = 0; m < metas.length; m++) {\n    if (m >= maxMetadata) { truncation.metadata = true; break; }\n    var mt = metas[m];\n    var key = mt.getAttribute('name') || mt.getAttribute('property') || mt.getAttribute('http-equiv');\n    var content = mt.getAttribute('content');\n    if (key && content && !meta.meta[key]) {\n      budgetText(content.length);\n      meta.meta[key] = content.slice(0, maxTextLength);\n    }\n  }\n  var scripts = document.querySelectorAll('script[type=\"application/ld+json\"]');\n  for (var s = 0; s < scripts.length; s++) {\n    if (s >= maxMetadata) { truncation.metadata = true; break; }\n    budgetText((scripts[s].textContent || '').length);\n    meta.jsonLd.push((scripts[s].textContent || '').slice(0, maxTextLength));\n  }\n  var noscripts = document.querySelectorAll('noscript');\n  for (var n = 0; n < noscripts.length; n++) {\n    if (n >= maxMetadata) { truncation.metadata = true; break; }\n    budgetText((noscripts[n].textContent || '').length);\n    meta.noscript.push((noscripts[n].textContent || '').trim().slice(0, maxTextLength));\n  }\n\n  var links = [];\n  var anchors = document.querySelectorAll('a[href]');\n  for (var l = 0; l < anchors.length; l++) {\n    if (Date.now() - start > timeBudgetMs) { truncation.time = true; break; }\n    if (l >= maxLinks) { truncation.links = true; break; }\n    var href = anchors[l].getAttribute('href') || '';\n    if (href) {\n      budgetText((anchors[l].textContent || '').length);\n      links.push({\n        text: (anchors[l].textContent || '').trim().slice(0, maxTextLength),\n        href: href.slice(0, maxTextLength)\n      });\n    }\n  }\n\n  if (document.createTreeWalker) {\n    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT);\n    var cnode;\n    while ((cnode = walker.nextNode())) {\n      if (Date.now() - start > timeBudgetMs) { truncation.time = true; break; }\n      if (comments.length >= maxComments) { truncation.comments = true; break; }\n      var t = (cnode.nodeValue || '').trim();\n      if (t) {\n        budgetText(t.length);\n        comments.push(t.slice(0, maxTextLength));\n      }\n    }\n  }\n\n  function selectorFor(el) {\n    if (el.id) { return '#' + el.id; }\n    var tag = el.tagName ? el.tagName.toLowerCase() : '';\n    return tag || '*';\n  }\n  function directText(el) {\n    var text = '';\n    for (var i = 0; i < el.childNodes.length; i++) {\n      var child = el.childNodes[i];\n      if (child && child.nodeType === 3) { text += child.nodeValue; }\n    }\n    return text;\n  }\n  function pseudoText(el, pseudo) {\n    try {\n      var content = window.getComputedStyle(el, pseudo).content;\n      if (!content || content === 'none' || content === 'normal') { return null; }\n      if ((content.charAt(0) === '\"' && content.charAt(content.length - 1) === '\"') ||\n          (content.charAt(0) === \"'\" && content.charAt(content.length - 1) === \"'\")) {\n        return content.slice(1, -1).slice(0, maxTextLength);\n      }\n      return content.slice(0, maxTextLength);\n    } catch (e) {\n      return null;\n    }\n  }\n  return {\n    probeVersion: __PROBE_VERSION__,\n    truncated: truncation.nodes || truncation.textBytes || truncation.comments || truncation.metadata || truncation.links || truncation.time,\n    truncation: truncation,\n    nodes: nodes,\n    comments: comments,\n    metadata: meta,\n    links: links\n  };\n})()";
+export const PROBE_SCRIPT_TEMPLATE = "(function () {\n  var maxNodes = __MAX_NODES__;\n  var maxTextLength = __MAX_TEXT_LENGTH__;\n  var maxTextBytes = __MAX_TEXT_BYTES__;\n  var maxComments = __MAX_COMMENTS__;\n  var maxMetadata = __MAX_METADATA__;\n  var maxLinks = __MAX_LINKS__;\n  var timeBudgetMs = __TIME_BUDGET__;\n  var start = Date.now();\n  var nodes = [];\n  var comments = [];\n  var totalTextBytes = 0;\n  var truncation = { nodes: false, textBytes: false, comments: false, metadata: false, links: false, time: false };\n\n  var vw = (window.innerWidth || document.documentElement.clientWidth || 0);\n  var vh = (window.innerHeight || document.documentElement.clientHeight || 0);\n\n  function budgetText(len) {\n    if (len === 0) { return ''; }\n    if (totalTextBytes + len > maxTextBytes) {\n      truncation.textBytes = true;\n      return '';\n    }\n    totalTextBytes += len;\n    return '';\n  }\n\n  var roots = document.querySelectorAll('body, body *');\n  for (var i = 0; i < roots.length; i++) {\n    if (Date.now() - start > timeBudgetMs) { truncation.time = true; break; }\n    if (nodes.length >= maxNodes) { truncation.nodes = true; break; }\n    var el = roots[i];\n    try {\n      var cs = window.getComputedStyle(el);\n      var rect = el.getBoundingClientRect();\n      var attrs = {};\n      var attrNames = ['title', 'alt', 'placeholder', 'role', 'aria-label', 'aria-description'];\n      for (var a = 0; a < attrNames.length; a++) {\n        var v = el.getAttribute(attrNames[a]);\n        if (v !== null && v !== '') {\n          budgetText(v.length);\n          attrs[attrNames[a]] = v.slice(0, maxTextLength);\n        }\n      }\n      if (el.attributes) {\n        for (var d = 0; d < el.attributes.length && Object.keys(attrs).length < 20; d++) {\n          var at = el.attributes[d];\n          if (at && at.name && at.name.indexOf('data-') === 0) {\n            budgetText((at.value || '').length);\n            attrs[at.name] = (at.value || '').slice(0, maxTextLength);\n          }\n        }\n      }\n      var rawText = directText(el);\n      budgetText(rawText.length);\n      var pseudoBefore = pseudoText(el, '::before');\n      var pseudoAfter = pseudoText(el, '::after');\n      nodes.push({\n        selector: selectorFor(el),\n        tagName: el.tagName ? el.tagName.toLowerCase() : '',\n        text: rawText.slice(0, maxTextLength),\n        display: cs.display || '',\n        visibility: cs.visibility || '',\n        opacity: parseFloat(cs.opacity || '1'),\n        ariaHidden: el.getAttribute('aria-hidden') === 'true',\n        hidden: !!el.hidden,\n        role: el.getAttribute('role'),\n        ariaLabel: el.getAttribute('aria-label'),\n        ariaDescription: el.getAttribute('aria-description'),\n        attributes: attrs,\n        dimensions: rect.width > 0 && rect.height > 0\n          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }\n          : null,\n        boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },\n        frameOrigin: (window.location && window.location.origin) || '',\n        fontSize: cs.fontSize || null,\n        color: cs.color || null,\n        backgroundColor: cs.backgroundColor || null,\n        position: cs.position || null,\n        transform: cs.transform || null,\n        clipPath: cs.clipPath || null,\n        overflow: cs.overflow || null,\n        inViewport: rect.right > 0 && rect.bottom > 0 && rect.left < vw && rect.top < vh,\n        pseudoBefore: pseudoBefore,\n        pseudoAfter: pseudoAfter\n      });\n    } catch (e) {\n      // Skip unreadable nodes; never throw out of the probe.\n    }\n  }\n\n  var meta = { title: '', meta: {}, jsonLd: [], noscript: [] };\n  meta.title = (document.title || '').slice(0, maxTextLength);\n  var metas = document.querySelectorAll('meta');\n  for (var m = 0; m < metas.length; m++) {\n    if (m >= maxMetadata) { truncation.metadata = true; break; }\n    var mt = metas[m];\n    var key = mt.getAttribute('name') || mt.getAttribute('property') || mt.getAttribute('itemprop') || mt.getAttribute('http-equiv');\n    var content = mt.getAttribute('content');\n    if (key && content && !meta.meta[key]) {\n      budgetText(content.length);\n      meta.meta[key] = content.slice(0, maxTextLength);\n    }\n  }\n  var scripts = document.querySelectorAll('script[type=\"application/ld+json\"]');\n  for (var s = 0; s < scripts.length; s++) {\n    if (s >= maxMetadata) { truncation.metadata = true; break; }\n    budgetText((scripts[s].textContent || '').length);\n    meta.jsonLd.push((scripts[s].textContent || '').slice(0, maxTextLength));\n  }\n  var noscripts = document.querySelectorAll('noscript');\n  for (var n = 0; n < noscripts.length; n++) {\n    if (n >= maxMetadata) { truncation.metadata = true; break; }\n    budgetText((noscripts[n].textContent || '').length);\n    meta.noscript.push((noscripts[n].textContent || '').trim().slice(0, maxTextLength));\n  }\n\n  var links = [];\n  var anchors = document.querySelectorAll('a[href]');\n  for (var l = 0; l < anchors.length; l++) {\n    if (Date.now() - start > timeBudgetMs) { truncation.time = true; break; }\n    if (l >= maxLinks) { truncation.links = true; break; }\n    var href = anchors[l].getAttribute('href') || '';\n    if (href) {\n      budgetText((anchors[l].textContent || '').length);\n      links.push({\n        text: (anchors[l].textContent || '').trim().slice(0, maxTextLength),\n        href: href.slice(0, maxTextLength)\n      });\n    }\n  }\n\n  if (document.createTreeWalker) {\n    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT);\n    var cnode;\n    while ((cnode = walker.nextNode())) {\n      if (Date.now() - start > timeBudgetMs) { truncation.time = true; break; }\n      if (comments.length >= maxComments) { truncation.comments = true; break; }\n      var t = (cnode.nodeValue || '').trim();\n      if (t) {\n        budgetText(t.length);\n        comments.push(t.slice(0, maxTextLength));\n      }\n    }\n  }\n\n  function selectorFor(el) {\n    if (el.id) { return '#' + el.id; }\n    var tag = el.tagName ? el.tagName.toLowerCase() : '';\n    return tag || '*';\n  }\n  function directText(el) {\n    var text = '';\n    for (var i = 0; i < el.childNodes.length; i++) {\n      var child = el.childNodes[i];\n      if (child && child.nodeType === 3) { text += child.nodeValue; }\n    }\n    return text;\n  }\n  function pseudoText(el, pseudo) {\n    try {\n      var content = window.getComputedStyle(el, pseudo).content;\n      if (!content || content === 'none' || content === 'normal') { return null; }\n      if ((content.charAt(0) === '\"' && content.charAt(content.length - 1) === '\"') ||\n          (content.charAt(0) === \"'\" && content.charAt(content.length - 1) === \"'\")) {\n        return content.slice(1, -1).slice(0, maxTextLength);\n      }\n      return content.slice(0, maxTextLength);\n    } catch (e) {\n      return null;\n    }\n  }\n  return {\n    probeVersion: __PROBE_VERSION__,\n    truncated: truncation.nodes || truncation.textBytes || truncation.comments || truncation.metadata || truncation.links || truncation.time,\n    truncation: truncation,\n    nodes: nodes,\n    comments: comments,\n    metadata: meta,\n    links: links\n  };\n})()";
 
 // @public (undocumented)
 export const PROBE_VERSION = 2;
@@ -1379,15 +1494,13 @@ export interface ProbeNode {
     // (undocumented)
     readonly backgroundColor: string | null;
     // (undocumented)
-    readonly boundingBox: BoundingBox_2 | null;
+    readonly boundingBox: BoundingBox | null;
     // (undocumented)
     readonly clipPath: string | null;
     // (undocumented)
     readonly color: string | null;
-    // Warning: (ae-forgotten-export) The symbol "BoundingBox_2" needs to be exported by the entry point index.d.ts
-    //
     // (undocumented)
-    readonly dimensions: BoundingBox_2 | null;
+    readonly dimensions: BoundingBox | null;
     // (undocumented)
     readonly display: string;
     readonly fontSize: string | null;
@@ -1527,7 +1640,12 @@ export type RedactedEvidence = string & {
 
 // @public
 export class RedactionRegistry implements Redactor {
+    constructor(limits?: RedactionRegistryLimits);
+    // (undocumented)
+    clear(): void;
     containsSecret(value: string): boolean;
+    // (undocumented)
+    get incomplete(): boolean;
     isSecret(value: string): boolean;
     matchEgress(value: string, signal?: AbortSignal): {
         readonly fingerprints: readonly string[];
@@ -1536,8 +1654,16 @@ export class RedactionRegistry implements Redactor {
     // (undocumented)
     redact(input: string): RedactedEvidence;
     // (undocumented)
-    registerSecret(value: string): void;
+    registerSecret(value: string): boolean;
     secretFingerprints(): string[];
+}
+
+// @public (undocumented)
+export interface RedactionRegistryLimits {
+    // (undocumented)
+    readonly maxTotalFormBytes: number;
+    // (undocumented)
+    readonly maxValues: number;
 }
 
 // @public (undocumented)
@@ -1997,6 +2123,8 @@ export class SecuritySession {
     // (undocumented)
     readonly id: string;
     inspectUntrustedText(content: string, maxBytes?: number, provenance?: DataProvenance): Promise<UntrustedContent>;
+    // (undocumented)
+    readonly memory: SessionMemoryGuard;
     observe(): Promise<PerceptionResult>;
     observeForAuthorization(): Promise<PerceptionResult>;
     // (undocumented)
@@ -2143,6 +2271,14 @@ export interface SessionGuardExecution {
 // @public
 export type SessionGuardScannerFactory = (classify: SessionGuardClassifier) => SecurityScanner;
 
+// @public (undocumented)
+export interface SessionMemoryGuard {
+    // (undocumented)
+    guardRead(item: unknown, signal?: AbortSignal): UntrustedContent;
+    // (undocumented)
+    guardWrite(candidate: MemoryWriteCandidate, signal?: AbortSignal): Promise<MemoryWriteResult>;
+}
+
 // @public
 export interface SessionRisk {
     // (undocumented)
@@ -2201,11 +2337,103 @@ export interface SinkTarget {
     readonly selector?: string;
 }
 
+// @public (undocumented)
+export interface SourceSinkCheck {
+    // (undocumented)
+    clear(): void;
+    // (undocumented)
+    readonly incomplete: boolean;
+    // (undocumented)
+    inspect(payload: EgressPayload, signal?: AbortSignal): EgressInspection;
+    // (undocumented)
+    register(datum: ProvenancedDatum<string>, signal?: AbortSignal): SourceValueRegistration;
+    // (undocumented)
+    readonly size: number;
+}
+
+// @public (undocumented)
+export interface SourceSinkCheckOptions {
+    // (undocumented)
+    readonly isDestinationAllowed: (fingerprint: string, destinationOrigin: string, sink: EgressPayload["sink"], fieldType?: string) => boolean;
+    // (undocumented)
+    readonly limits?: SourceValueRegistryLimits;
+    // (undocumented)
+    readonly now?: () => number;
+}
+
+// @public (undocumented)
+export interface SourceValueEvidence {
+    // (undocumented)
+    readonly fingerprint: string;
+    // (undocumented)
+    readonly provenance: DataProvenance;
+}
+
+// @public (undocumented)
+export interface SourceValueMatch {
+    // (undocumented)
+    readonly fingerprints: readonly string[];
+    // (undocumented)
+    readonly incomplete: boolean;
+    // (undocumented)
+    readonly sources: readonly SourceValueEvidence[];
+}
+
+// @public (undocumented)
+export type SourceValueRegistration = "registered" | "duplicate" | "incomplete";
+
+// @public
+export class SourceValueRegistry {
+    constructor(limits?: SourceValueRegistryLimits, now?: () => number);
+    // (undocumented)
+    clear(): void;
+    // (undocumented)
+    get incomplete(): boolean;
+    // (undocumented)
+    match(value: string, signal?: AbortSignal): SourceValueMatch;
+    // (undocumented)
+    register(value: string, provenance: DataProvenance, signal?: AbortSignal): SourceValueRegistration;
+    // (undocumented)
+    get size(): number;
+}
+
+// @public (undocumented)
+export interface SourceValueRegistryLimits {
+    // (undocumented)
+    readonly maxEntries: number;
+    // (undocumented)
+    readonly maxMatchedSources: number;
+    // (undocumented)
+    readonly maxProvenancesPerEntry: number;
+    // (undocumented)
+    readonly maxTotalFormBytes: number;
+    // (undocumented)
+    readonly maxValueBytes: number;
+    // (undocumented)
+    readonly ttlMs: number;
+}
+
 // @public
 export function stableSerialize(value: unknown): string;
 
 // @public
 export function stateForScore(score: number, policy?: RiskPolicy): RiskState;
+
+// @public
+export interface StoredMemoryItem {
+    // (undocumented)
+    readonly content: string;
+    readonly contentHash: string;
+    // (undocumented)
+    readonly kind: "data";
+    // (undocumented)
+    readonly markers: readonly MemoryMarker[];
+    readonly provenance: DataProvenance;
+    // (undocumented)
+    readonly schemaVersion: typeof MEMORY_ITEM_SCHEMA_VERSION;
+    // (undocumented)
+    readonly sensitivity: MemorySensitivity;
+}
 
 // @public (undocumented)
 export const systemSessionClock: SessionClock;
@@ -2269,10 +2497,10 @@ export const TIER_KINDS: Readonly<Record<DetectorTier, "deterministic" | "semant
 export type TierSkipReason = "not_configured" | "deterministic_critical" | "required_tier_failed" | "cancelled";
 
 // @public (undocumented)
-export const TRACE_EVENT_KINDS: readonly ["session_start", "observation", "taint_activation", "trusted_instruction_claim", "finding", "scan_result", "proposed_action", "canonical_action", "policy_decision", "approval_request", "approval_decision", "execution", "post_action", "risk_change", "budget_event", "escape_hatch", "network_mutation", "adapter_event", "authorized_action", "action_revalidation", "secret_resolution", "egress_inspection", "session_end"];
+export const TRACE_EVENT_KINDS: readonly ["session_start", "observation", "taint_activation", "trusted_instruction_claim", "finding", "scan_result", "proposed_action", "canonical_action", "policy_decision", "approval_request", "approval_decision", "execution", "post_action", "risk_change", "budget_event", "escape_hatch", "network_mutation", "adapter_event", "authorized_action", "action_revalidation", "secret_resolution", "egress_inspection", "memory_write", "memory_read", "session_end"];
 
 // @public (undocumented)
-export const TRACE_SCHEMA_VERSION = "1.4.0";
+export const TRACE_SCHEMA_VERSION = "1.6.0";
 
 // @public (undocumented)
 export interface TraceDocument {
@@ -2428,6 +2656,9 @@ export function validateFinding(input: unknown): Finding | null;
 // @public
 export function validateGuardClassification(input: unknown): GuardClassification | null;
 
+// @public (undocumented)
+export function validateMemoryWriteCandidate(input: unknown): MemoryWriteCandidate | null;
+
 // @public
 export function validateNetworkCapabilities(input: unknown): NetworkCapabilities | null;
 
@@ -2442,6 +2673,9 @@ export function validateProbeResult(input: unknown): ProbeResult | null;
 
 // @public
 export function validateScanResult(input: unknown): ScanResult | null;
+
+// @public
+export function validateStoredMemoryItem(input: unknown): StoredMemoryItem | null;
 
 // @public
 export function validateTaskContract(input: unknown): ValidationResult;

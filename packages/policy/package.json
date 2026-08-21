@@ -29,7 +29,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:property": "vitest run test/fuzz"
   },
   "dependencies": {
     "@openagentfence/core": "workspace:*",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.8",
     "eslint": "^9.15.0",
+    "fast-check": "^3.23.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

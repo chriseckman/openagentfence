@@ -78,5 +78,6 @@ put detailed design in `docs/ARCHITECTURE.md` and link to it.
 | [0013](0013-policy-runtime-state-and-suppression-trace.md) | Policy runtime state and suppression trace boundary | Accepted |
 | [0014](0014-decoder-timeout-accounting.md) | Decoder timeout accounting | Accepted |
 | [0017](0017-provenance-carrier-contract.md) | Provenance carrier contract | Accepted |
+| [0018](0018-cli-playwright-corpus-execution-boundary.md) | CLI composition boundary for Playwright corpus execution | Proposed |
 
 Add a row here whenever an ADR is created or its status changes.

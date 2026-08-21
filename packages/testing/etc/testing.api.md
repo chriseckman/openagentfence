@@ -5,12 +5,337 @@
 ```ts
 
 import { AggregateVerdict } from '@openagentfence/core';
+import type { EnforcementLevel } from '@openagentfence/core';
 import { Finding } from '@openagentfence/core';
+import type { NetworkInitiator } from '@openagentfence/core';
+import type { NetworkSurface } from '@openagentfence/core';
+
+// @public (undocumented)
+export function aggregateBenchmarkMetrics(measurements: readonly BenchmarkCaseMeasurement[]): BenchmarkAggregateMetrics;
+
+// @public (undocumented)
+export const BENCHMARK_LIMITS: Readonly<{
+    maxCases: 4096;
+    maxCaseDurationMs: 60000;
+    maxRunDurationMs: number;
+    maxIdentifierBytes: 256;
+}>;
+
+// @public
+export const BENCHMARK_OUTCOME_KEYS: readonly ["attackSuccess", "exfiltrationSuccess", "unauthorizedActionSuccess", "unauthorizedOriginTransition", "unauthorizedNetworkMutation", "secretResolutionBypass", "injectionDetection", "falsePositive", "legitimateCompletion", "restrictedRecovery", "actionIntentMismatchBlocked"];
+
+// @public (undocumented)
+export const BENCHMARK_PROFILES: Readonly<{
+    pr: Readonly<{
+        name: "pr";
+        maxCases: 12;
+        caseTimeoutMs: 5000;
+        runTimeoutMs: 60000;
+    }>;
+    nightly: Readonly<{
+        name: "nightly";
+        maxCases: 1024;
+        caseTimeoutMs: 30000;
+        runTimeoutMs: number;
+    }>;
+    full: Readonly<{
+        name: "full";
+        maxCases: 4096;
+        caseTimeoutMs: 60000;
+        runTimeoutMs: number;
+    }>;
+}>;
+
+// @public (undocumented)
+export const BENCHMARK_SCHEMA_VERSION = "1.0.0";
+
+// @public (undocumented)
+export interface BenchmarkAgent {
+    // (undocumented)
+    run(input: BenchmarkAgentInput): Promise<BenchmarkAgentResult> | BenchmarkAgentResult;
+}
+
+// @public (undocumented)
+export interface BenchmarkAgentInput {
+    // (undocumented)
+    readonly configuration: "unguarded" | "guarded";
+    // (undocumented)
+    readonly controlsEnabled: boolean;
+    // (undocumented)
+    readonly corpusCase: CorpusCase;
+    // (undocumented)
+    readonly deadline: number;
+    // (undocumented)
+    readonly seed: number;
+    // (undocumented)
+    readonly signal: AbortSignal;
+}
+
+// @public (undocumented)
+export interface BenchmarkAgentResult {
+    // (undocumented)
+    readonly guard: BenchmarkGuardMeasurement;
+    readonly measuredLatencyMs?: number;
+    // (undocumented)
+    readonly networkMutations: readonly BenchmarkNetworkMutationMeasurement[];
+    // (undocumented)
+    readonly outcomes: BenchmarkOutcomes;
+    // (undocumented)
+    readonly usage: BenchmarkModelUsage;
+}
+
+// @public (undocumented)
+export interface BenchmarkAggregateMetrics {
+    // (undocumented)
+    readonly guardCallBudgetExhaustion: BenchmarkRateMetric;
+    // (undocumented)
+    readonly guardCallsPerApplicableCase: number | null;
+    // (undocumented)
+    readonly guardInvocation: BenchmarkRateMetric;
+    // (undocumented)
+    readonly guardTokenBudgetExhaustion: BenchmarkRateMetric;
+    // (undocumented)
+    readonly latency: BenchmarkLatencyMetric;
+    // (undocumented)
+    readonly networkMutations: readonly BenchmarkNetworkMutationMetric[];
+    // (undocumented)
+    readonly outcomes: Readonly<Record<BenchmarkOutcomeKey, BenchmarkRateMetric>>;
+    // (undocumented)
+    readonly totalGuardCalls: number;
+    // (undocumented)
+    readonly totalReservedGuardTokens: number;
+    // (undocumented)
+    readonly usage: BenchmarkUsageMetric;
+}
+
+// @public
+export interface BenchmarkCaseApplicability {
+    // (undocumented)
+    readonly caseId: string;
+    // (undocumented)
+    readonly guardOpportunity: boolean;
+    // (undocumented)
+    readonly outcomes: readonly (typeof BENCHMARK_OUTCOME_KEYS)[number][];
+}
+
+// @public
+export interface BenchmarkCaseMeasurement {
+    // (undocumented)
+    readonly caseId: string;
+    // (undocumented)
+    readonly configuration: "unguarded" | "guarded";
+    // (undocumented)
+    readonly guard: BenchmarkGuardMeasurement;
+    // (undocumented)
+    readonly latencyMs: number;
+    // (undocumented)
+    readonly networkMutations: readonly BenchmarkNetworkMutationMeasurement[];
+    // (undocumented)
+    readonly outcomes: BenchmarkOutcomes;
+    // (undocumented)
+    readonly usage: BenchmarkModelUsage;
+}
+
+// @public (undocumented)
+export interface BenchmarkComparison {
+    // (undocumented)
+    readonly addedMedianLatencyMs: number | null;
+    // (undocumented)
+    readonly costDeltaUsd: number | null;
+    // (undocumented)
+    readonly tokenDelta: number | null;
+}
+
+// @public (undocumented)
+export interface BenchmarkComponentPin {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly version: string;
+}
+
+// @public (undocumented)
+export interface BenchmarkGuardMeasurement {
+    // (undocumented)
+    readonly budgetExhausted: "none" | "calls" | "tokens" | "calls_and_tokens";
+    // (undocumented)
+    readonly calls: number;
+    // (undocumented)
+    readonly reservedTokens: number;
+    // (undocumented)
+    readonly status: "invoked" | "not_invoked" | "not_applicable" | "unsupported";
+}
+
+// @public (undocumented)
+export interface BenchmarkLatencyMetric {
+    // (undocumented)
+    readonly count: number;
+    // (undocumented)
+    readonly maxMs: number | null;
+    // (undocumented)
+    readonly meanMs: number | null;
+    // (undocumented)
+    readonly medianMs: number | null;
+    // (undocumented)
+    readonly minMs: number | null;
+    // (undocumented)
+    readonly p95Ms: number | null;
+}
+
+// @public (undocumented)
+export interface BenchmarkModelPin extends BenchmarkComponentPin {
+    // (undocumented)
+    readonly model: string;
+}
+
+// @public (undocumented)
+export interface BenchmarkModelUsage {
+    // (undocumented)
+    readonly costUsd?: number;
+    // (undocumented)
+    readonly inputTokens?: number;
+    // (undocumented)
+    readonly outputTokens?: number;
+    // (undocumented)
+    readonly status: "measured" | "unsupported";
+}
+
+// @public (undocumented)
+export interface BenchmarkNetworkMutationMeasurement {
+    // (undocumented)
+    readonly attempted: number;
+    // (undocumented)
+    readonly enforcement: EnforcementLevel;
+    // (undocumented)
+    readonly initiator: NetworkInitiator;
+    // (undocumented)
+    readonly succeeded: number;
+    // (undocumented)
+    readonly surface: NetworkSurface;
+}
+
+// @public (undocumented)
+export interface BenchmarkNetworkMutationMetric extends BenchmarkNetworkMutationMeasurement {
+    // (undocumented)
+    readonly successRate: number | null;
+}
+
+// @public (undocumented)
+export type BenchmarkOutcomeKey = (typeof BENCHMARK_OUTCOME_KEYS)[number];
+
+// @public
+export type BenchmarkOutcomes = Readonly<Record<BenchmarkOutcomeKey, BenchmarkOutcomeStatus>>;
+
+// @public (undocumented)
+export type BenchmarkOutcomeStatus = "success" | "failure" | "not_applicable" | "unsupported";
+
+// @public (undocumented)
+export interface BenchmarkPinnedMetadata {
+    // (undocumented)
+    readonly browser: BenchmarkComponentPin;
+    // (undocumented)
+    readonly corpusHash: string;
+    // (undocumented)
+    readonly corpusSchemaVersion: string;
+    // (undocumented)
+    readonly framework: BenchmarkComponentPin;
+    // (undocumented)
+    readonly guardProviders: readonly BenchmarkModelPin[];
+    // (undocumented)
+    readonly policyHash: string;
+    // (undocumented)
+    readonly primaryAgent: BenchmarkModelPin;
+    // (undocumented)
+    readonly runnerVersion: string;
+}
+
+// @public (undocumented)
+export interface BenchmarkProfile {
+    // (undocumented)
+    readonly caseTimeoutMs: number;
+    // (undocumented)
+    readonly maxCases: number;
+    // (undocumented)
+    readonly name: "pr" | "nightly" | "full" | "custom";
+    // (undocumented)
+    readonly runTimeoutMs: number;
+}
+
+// @public (undocumented)
+export interface BenchmarkRateMetric {
+    // (undocumented)
+    readonly denominator: number;
+    // (undocumented)
+    readonly notApplicable: number;
+    // (undocumented)
+    readonly numerator: number;
+    // (undocumented)
+    readonly rate: number | null;
+    // (undocumented)
+    readonly unsupported: number;
+}
+
+// @public (undocumented)
+export interface BenchmarkReport {
+    // (undocumented)
+    readonly applicability: readonly BenchmarkCaseApplicability[];
+    // (undocumented)
+    readonly caseIds: readonly string[];
+    // (undocumented)
+    readonly comparison: BenchmarkComparison;
+    // (undocumented)
+    readonly generatedAt: string;
+    // (undocumented)
+    readonly measurements: readonly BenchmarkCaseMeasurement[];
+    // (undocumented)
+    readonly metadata: BenchmarkPinnedMetadata;
+    // (undocumented)
+    readonly metrics: Readonly<{
+        unguarded: BenchmarkAggregateMetrics;
+        guarded: BenchmarkAggregateMetrics;
+    }>;
+    // (undocumented)
+    readonly profile: BenchmarkProfile;
+    // (undocumented)
+    readonly reportHash: string;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly schemaVersion: typeof BENCHMARK_SCHEMA_VERSION;
+    // (undocumented)
+    readonly seed: number;
+}
+
+// @public
+export function benchmarkReportJson(report: BenchmarkReport): string;
+
+// @public
+export function benchmarkReportMarkdown(report: BenchmarkReport): string;
+
+// @public (undocumented)
+export interface BenchmarkUsageMetric {
+    // (undocumented)
+    readonly costUsd: number | null;
+    // (undocumented)
+    readonly inputTokens: number | null;
+    // (undocumented)
+    readonly measuredCases: number;
+    // (undocumented)
+    readonly outputTokens: number | null;
+    // (undocumented)
+    readonly totalTokens: number | null;
+    // (undocumented)
+    readonly unsupportedCases: number;
+}
 
 // @public (undocumented)
 export interface CapturedRequest {
     // (undocumented)
     readonly body: string;
+    // (undocumented)
+    readonly bodyBytes: number;
+    // (undocumented)
+    readonly bodyTruncated: boolean;
     // (undocumented)
     readonly headers: Readonly<Record<string, string>>;
     // (undocumented)
@@ -22,10 +347,50 @@ export interface CapturedRequest {
 }
 
 // @public
-export const CORPUS_SCHEMA_VERSION = "1.0.0";
+export function caseSeed(seed: number, caseId: string): number;
+
+// @public (undocumented)
+export const CORPUS_ATTACK_CLASSES: readonly string[];
+
+// @public (undocumented)
+export const CORPUS_INITIATORS: readonly ["none", "agent", "page-script", "form", "redirect", "webmcp", "service-worker", "unknown"];
+
+// @public (undocumented)
+export const CORPUS_INVARIANTS: readonly string[];
+
+// @public (undocumented)
+export const CORPUS_LIMITS: Readonly<{
+    maxFileBytes: number;
+    maxCases: 4096;
+    maxDepth: 16;
+    maxStringBytes: 4096;
+    maxTaskBytes: 16384;
+    maxArrayItems: 128;
+    maxPages: 16;
+    maxSteps: 64;
+    maxFixtureBytes: number;
+}>;
+
+// @public
+export const CORPUS_SCHEMA_VERSION = "1.1.0";
+
+// @public (undocumented)
+export const CORPUS_SURFACES: readonly ["dom", "hidden-dom", "aria", "metadata", "attributes", "comments", "encoding", "unicode", "cross-origin", "navigation", "network", "network-mutation", "fetch", "redirect", "form", "popup", "websocket", "beacon", "service-worker", "webmcp", "memory", "exfiltration", "upload", "download", "message", "paste", "guard-provider", "semantic-guard", "screenshot", "file"];
+
+// @public
+export interface CorpusAdaptiveMetadata {
+    // (undocumented)
+    readonly maxVariants: number;
+    // (undocumented)
+    readonly seed: string;
+    // (undocumented)
+    readonly transformations: readonly string[];
+}
 
 // @public (undocumented)
 export interface CorpusCase {
+    // (undocumented)
+    readonly adaptive?: CorpusAdaptiveMetadata;
     // (undocumented)
     readonly attackClasses: readonly string[];
     // (undocumented)
@@ -33,7 +398,7 @@ export interface CorpusCase {
     // (undocumented)
     readonly id: string;
     // (undocumented)
-    readonly initiator?: string;
+    readonly initiator: CorpusInitiator;
     // (undocumented)
     readonly invariants: readonly string[];
     // (undocumented)
@@ -43,41 +408,69 @@ export interface CorpusCase {
     // (undocumented)
     readonly mode: CorpusMode;
     // (undocumented)
+    readonly mutation?: CorpusMutationMetadata;
+    // (undocumented)
     readonly pages: readonly CorpusPage[];
     // (undocumented)
-    readonly policy?: Readonly<Record<string, unknown>>;
+    readonly policy?: Readonly<CorpusJsonObject>;
     // (undocumented)
-    readonly steps?: readonly Readonly<Record<string, unknown>>[];
+    readonly steps?: readonly CorpusStep[];
     // (undocumented)
-    readonly surfaces?: readonly string[];
+    readonly surfaces: readonly CorpusSurface[];
     // (undocumented)
     readonly tags?: readonly string[];
     // (undocumented)
     readonly task: string;
+    // (undocumented)
+    readonly taskContract?: Readonly<CorpusJsonObject>;
 }
 
 // @public (undocumented)
 export interface CorpusExpected {
     // (undocumented)
-    readonly control?: string;
+    readonly control?: "deterministic" | "semantic-evidence-only" | "approval" | "observed-only" | "unavailable";
     // (undocumented)
     readonly findings?: readonly string[];
     // (undocumented)
-    readonly outcome: string;
+    readonly outcome: "ALLOW" | "ALLOW_SANITIZED" | "WARN" | "RESTRICT" | "BLOCK" | "QUARANTINE";
     // (undocumented)
     readonly reasons?: readonly string[];
     // (undocumented)
-    readonly risk?: string;
+    readonly risk?: "NORMAL" | "RESTRICTED" | "READ_ONLY" | "QUARANTINED";
 }
 
 // @public
-export function corpusHash(cases: readonly CorpusCase[]): string;
+export function corpusHash(cases: readonly CorpusCase[], fixtureHashes?: Readonly<Record<string, string>>): string;
+
+// @public (undocumented)
+export type CorpusInitiator = (typeof CORPUS_INITIATORS)[number];
+
+// @public (undocumented)
+export type CorpusJson = string | number | boolean | null | CorpusJson[] | CorpusJsonObject;
+
+// @public (undocumented)
+export interface CorpusJsonObject {
+    // (undocumented)
+    readonly [key: string]: CorpusJson;
+}
 
 // @public (undocumented)
 export type CorpusKind = "static" | "mutation" | "adaptive-ready";
 
 // @public (undocumented)
 export type CorpusMode = "attack" | "benign";
+
+// @public
+export interface CorpusMutationMetadata {
+    // (undocumented)
+    readonly delayMs?: number;
+    // (undocumented)
+    readonly sequence?: readonly string[];
+    // (undocumented)
+    readonly target?: string;
+    // (undocumented)
+    readonly trigger: "load" | "timer" | "action" | "navigation" | "request";
+}
 
 // @public (undocumented)
 export interface CorpusPage {
@@ -87,11 +480,64 @@ export interface CorpusPage {
     readonly url: string;
 }
 
-// @public
-export function expectNoRawSecret(value: unknown, secret: string): boolean;
+// @public (undocumented)
+export interface CorpusRunResult<Result> {
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly result: Result;
+}
+
+// @public (undocumented)
+export interface CorpusStep {
+    // (undocumented)
+    readonly action?: string;
+    // (undocumented)
+    readonly description: string;
+    // (undocumented)
+    readonly target?: string;
+}
+
+// @public (undocumented)
+export type CorpusSurface = (typeof CORPUS_SURFACES)[number];
 
 // @public
-export function expectNoRawSecretIn(value: unknown, secret: string): boolean;
+export function corpusVitestCases(corpus: LoadedCorpus, predicate?: (item: CorpusCase) => boolean): readonly (readonly [name: string, item: CorpusCase])[];
+
+// @public
+export function createScriptedBenchmarkAgent(harness: ScriptedBenchmarkHarness): BenchmarkAgent;
+
+// @public
+export function expectBlocked(value: AggregateVerdict | {
+    readonly verdict: AggregateVerdict;
+}): boolean;
+
+// @public
+export function expectFinding(findings: readonly Finding[], category: string): boolean;
+
+// @public
+export function expectNoRawSecret(value: unknown, secrets: string | readonly string[]): boolean;
+
+// @public
+export function expectNoRawSecretIn(value: unknown, secrets: string | readonly string[]): boolean;
+
+// @public
+export function expectVerdict(value: AggregateVerdict | {
+    readonly verdict: AggregateVerdict;
+}, expected: AggregateVerdict): boolean;
+
+// @public (undocumented)
+export const FIXTURE_SERVER_LIMITS: Readonly<{
+    maxOrigins: 8;
+    maxCapturedRequests: 1024;
+    maxRequestBodyBytes: number;
+    maxStaticFileBytes: number;
+    maxUrlLength: 4096;
+    maxHeaders: 64;
+    maxHeaderNameLength: 128;
+    maxHeaderValueLength: 2048;
+    maxWaitMs: 5000;
+}>;
 
 // @public
 export interface FixtureOrigin {
@@ -111,11 +557,29 @@ export function fixtureSentinel(): string;
 // @public (undocumented)
 export interface FixtureServer {
     // (undocumented)
+    readonly captureOverflowed: boolean;
+    // (undocumented)
+    clearRequests(): void;
+    // (undocumented)
     close(): Promise<void>;
     // (undocumented)
     readonly origins: readonly FixtureOrigin[];
     // (undocumented)
     readonly requests: readonly CapturedRequest[];
+    // (undocumented)
+    requestsFor(origin: FixtureOrigin | string): readonly CapturedRequest[];
+    // (undocumented)
+    url(origin: FixtureOrigin | string, path: string): string;
+    // (undocumented)
+    waitForRequest(predicate: (request: CapturedRequest) => boolean, timeoutMs?: number): Promise<CapturedRequest | null>;
+}
+
+// @public (undocumented)
+export interface FixtureServerOptions {
+    // (undocumented)
+    readonly originCount?: number;
+    readonly origins?: readonly string[];
+    readonly root?: string;
 }
 
 // @public
@@ -135,13 +599,18 @@ export interface LoadedCorpus {
     // (undocumented)
     readonly cases: readonly CorpusCase[];
     // (undocumented)
+    readonly fixtureHashes: Readonly<Record<string, string>>;
+    // (undocumented)
     readonly hash: string;
     // (undocumented)
-    readonly schemaVersion: string;
+    readonly schemaVersion: typeof CORPUS_SCHEMA_VERSION;
 }
 
 // @public
 export const PACKAGE_NAME = "@openagentfence/testing";
+
+// @public
+export function parseBenchmarkReport(text: string): BenchmarkReport;
 
 // @public
 export function reasonsOf(decision: {
@@ -149,9 +618,51 @@ export function reasonsOf(decision: {
 }): readonly string[];
 
 // @public
-export function startFixtureServer(options?: {
-    readonly originCount?: number;
-}): Promise<FixtureServer>;
+export function runBenchmark(options: RunBenchmarkOptions): Promise<BenchmarkReport>;
+
+// @public (undocumented)
+export interface RunBenchmarkOptions {
+    // (undocumented)
+    readonly agent: BenchmarkAgent;
+    // (undocumented)
+    readonly applicability: readonly BenchmarkCaseApplicability[];
+    // (undocumented)
+    readonly caseIds?: readonly string[];
+    // (undocumented)
+    readonly corpus: LoadedCorpus;
+    // (undocumented)
+    readonly generatedAt: string;
+    // (undocumented)
+    readonly metadata: Omit<BenchmarkPinnedMetadata, "corpusHash" | "corpusSchemaVersion">;
+    // (undocumented)
+    readonly now?: () => number;
+    // (undocumented)
+    readonly profile: BenchmarkProfile;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly seed: number;
+    // (undocumented)
+    readonly signal?: AbortSignal;
+}
+
+// @public
+export function runCorpusCases<Result>(corpus: LoadedCorpus, run: (item: CorpusCase) => Promise<Result> | Result): Promise<readonly CorpusRunResult<Result>[]>;
+
+// @public (undocumented)
+export interface ScriptedBenchmarkHarness {
+    execute(input: BenchmarkAgentInput & {
+        readonly pageText: string;
+        readonly instruction: string | null;
+    }): Promise<BenchmarkAgentResult> | BenchmarkAgentResult;
+    readPage(input: BenchmarkAgentInput): Promise<string> | string;
+}
+
+// @public
+export function startFixtureServer(options?: FixtureServerOptions): Promise<FixtureServer>;
+
+// @public
+export function validateBenchmarkReport(value: unknown): value is BenchmarkReport;
 
 // @public
 export function validateCorpusCase(input: unknown): CorpusCase | null;

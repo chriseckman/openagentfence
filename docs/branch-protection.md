@@ -5,10 +5,12 @@ here so CI configuration and merge policy stay in sync.
 
 - **Pull requests only.** Direct pushes to `main` are rejected.
 - **One approving review required.**
-- **Required status checks:** `lint`, `typecheck`, `unit`, `integration`,
+- **Required status checks:** `lint`, `typecheck`, `unit`, `property-fuzz`, `integration`,
   `commitlint`, `dco`, `CodeQL`, `dependency-review`. The Linux Chromium
-  `integration` job is enabled for M2; `security-corpus` remains an M7
-  placeholder and must not be required yet. The integration job uploads only
+  `integration` job, the seeded 1,000-run OAF-TEST-013 `property-fuzz` job,
+  and the OAF-TEST-001/002 `security-corpus` foundation job are enabled. The
+  latter is not the full M7 CLI regression gate and must not
+  be required until OAF-TEST-012 lands. The integration job uploads only
   schema-validated, raw-secret-checked synthetic trace artifacts.
 - **Linear history.** Squash or rebase merges only; no merge commits.
 - **No force pushes**, no history rewrite of `main`.

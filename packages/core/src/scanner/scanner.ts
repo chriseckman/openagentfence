@@ -2,7 +2,8 @@ import type { ScannerVerdict } from "../contracts/verdict.js";
 import type { Severity } from "../contracts/finding.js";
 import type { ScanResult } from "../contracts/scan-result.js";
 import type { SecurityContext } from "./context.js";
-import type { ScannerPermission } from "./manifest.js";
+import type { PluginManifest, ScannerPermission } from "./manifest.js";
+import type { ScopedContextView } from "./context.js";
 import type { DetectorTier } from "../guard/tier.js";
 
 /**
@@ -24,6 +25,23 @@ export interface SecurityScanner {
   readonly required?: boolean;
   readonly permissions?: readonly ScannerPermission[];
   scan(ctx: SecurityContext): Promise<ScanResult>;
+}
+
+/**
+ * Explicit least-privilege plugin registration input (INV-15). The plugin
+ * callback receives only a manifest-scoped view; the full `SecurityContext`
+ * remains inaccessible through this contract.
+ */
+export interface PluginSecurityScannerDefinition {
+  readonly id: string;
+  readonly phases: readonly import("../contracts/phase.js").SecurityPhase[];
+  readonly kind: "deterministic" | "semantic";
+  readonly tier?: DetectorTier;
+  readonly priority?: number;
+  readonly timeoutMs?: number;
+  readonly required?: boolean;
+  readonly manifest: PluginManifest;
+  scan(ctx: ScopedContextView): Promise<ScanResult>;
 }
 
 export type { ScannerVerdict, Severity, ScanResult };

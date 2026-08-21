@@ -9,18 +9,21 @@ import type { Request } from "playwright";
 const MAX_HEADERS = 50;
 const MAX_HEADER_VALUE_BYTES = 2048;
 
-export function inspectRoutedEgress(
+export async function inspectRoutedEgress(
   request: Request,
   provenance: DataProvenance,
-  inspect: (payload: EgressPayload, signal?: AbortSignal) => EgressInspection,
+  inspect: (
+    payload: EgressPayload,
+    signal?: AbortSignal,
+  ) => EgressInspection | Promise<EgressInspection>,
   signal?: AbortSignal,
-): EgressInspection {
+): Promise<EgressInspection> {
   const payloads = routePayloads(request, provenance);
   let inspectedBytes = 0;
   let matchCount = 0;
   const reasons = new Set<EgressInspection["reasons"][number]>();
   for (const payload of payloads) {
-    const result = inspect(payload, signal);
+    const result = await inspect(payload, signal);
     inspectedBytes += result.inspectedBytes;
     matchCount += result.matchCount;
     if (result.verdict === "block") for (const reason of result.reasons) reasons.add(reason);

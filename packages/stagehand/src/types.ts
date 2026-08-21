@@ -10,7 +10,7 @@ export interface StagehandObserveResult {
   /** Structured method to execute; absent candidates are not executable. */
   readonly method?: string | undefined;
   /** Structured method arguments, preserved exactly through authorization. */
-  readonly arguments?: string[] | undefined;
+  readonly arguments?: readonly string[] | undefined;
 }
 
 /** Minimal structural form of Stagehand v4's versioned observe response. */

@@ -27,7 +27,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:property": "vitest run test/fuzz"
   },
   "dependencies": {
     "@openagentfence/core": "workspace:*"

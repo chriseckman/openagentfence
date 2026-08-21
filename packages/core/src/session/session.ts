@@ -74,13 +74,28 @@ import type { ApprovalDecision, ApprovalHandler, ApprovalRequest } from "./appro
 import { resolveApproval } from "./approval.js";
 import type { SessionDecision, SessionEvents } from "./events.js";
 import { actionEgressPayloads } from "../egress/action.js";
-import {
-  createEgressInspector,
-  type EgressInspection,
-  type EgressInspector,
-} from "../egress/inspect.js";
+import type { EgressInspection } from "../egress/inspect.js";
 import type { EgressPayload } from "../egress/payload.js";
+import { EGRESS_SINKS } from "../egress/payload.js";
 import { evaluateCrossOriginExfiltration } from "../egress/exfiltration.js";
+import { createSourceSinkCheck, type SourceSinkCheck } from "../provenance/source-sink.js";
+import { DEFAULT_SOURCE_VALUE_LIMITS } from "../provenance/value-registry.js";
+import {
+  MemoryGuardError,
+  type MemoryGuardReason,
+  type MemoryWriteResult,
+  type SessionMemoryGuard,
+} from "../memory/guard.js";
+import {
+  createStoredMemoryItem,
+  memoryItemHash,
+  memoryReadDatum,
+  memoryWriteCandidateExceedsBounds,
+  validateMemoryWriteCandidate,
+  validateStoredMemoryItemShape,
+  type MemoryWriteCandidate,
+  type MemoryMarker,
+} from "../memory/item.js";
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 30_000;
 
@@ -179,6 +194,7 @@ export type SessionGuardScannerFactory = (
 export class SecuritySession {
   readonly id: string;
   readonly envelope: CapabilityEnvelope;
+  readonly memory: SessionMemoryGuard;
 
   private readonly adapter: BrowserAdapter;
   private readonly contract: TaskContract;
@@ -218,7 +234,7 @@ export class SecuritySession {
 
   private readonly listeners = new Map<keyof SessionEvents, Set<(event: unknown) => void>>();
   private readonly sensitiveEgressBindings = new Map<string, SensitiveEgressBinding[]>();
-  private readonly egressInspector: EgressInspector;
+  private readonly sourceSinkCheck: SourceSinkCheck;
   private readonly evaluatedNetworkMutations = new WeakSet<NetworkMutation>();
 
   constructor(init: SecuritySessionInit) {
@@ -236,8 +252,7 @@ export class SecuritySession {
     this.trace = init.trace;
     this.clock = init.clock ?? systemSessionClock;
     this.budgets = new SessionBudgetLedger(init.contract.budgets, this.clock.now(), this.clock);
-    this.egressInspector = createEgressInspector({
-      match: (value, signal) => this.redactor.matchEgress(value, signal),
+    this.sourceSinkCheck = createSourceSinkCheck({
       isDestinationAllowed: (fingerprint, destinationOrigin, sink, fieldType) =>
         this.sensitiveEgressBindings
           .get(fingerprint)
@@ -246,6 +261,22 @@ export class SecuritySession {
               binding.origins.has(destinationOrigin) &&
               binding.fieldTypes.has(sink === "typed_value" ? (fieldType ?? "") : sink),
           ) === true,
+      limits: {
+        ...DEFAULT_SOURCE_VALUE_LIMITS,
+        ttlMs: Math.max(
+          1,
+          Math.min(
+            DEFAULT_SOURCE_VALUE_LIMITS.ttlMs,
+            init.contract.budgets?.maxDurationMs ?? DEFAULT_SOURCE_VALUE_LIMITS.ttlMs,
+          ),
+        ),
+      },
+      now: () => this.clock.now(),
+    });
+    this.memory = Object.freeze({
+      guardWrite: (candidate: MemoryWriteCandidate, signal?: AbortSignal) =>
+        this.guardMemoryWrite(candidate, signal),
+      guardRead: (item: unknown, signal?: AbortSignal) => this.guardMemoryRead(item, signal),
     });
     const sink: AdapterEventSink = {
       onNavigation: (event) => this.recordAdapterEvent(event),
@@ -322,10 +353,142 @@ export class SecuritySession {
   ): Promise<SecretHandle> {
     if (this.ended) throw new Error("session has ended");
     if (this.vault === undefined) throw new Error("no vault is configured for this session");
+    const provenance: DataProvenance = { trust: "application", timestamp: nowIso(this.clock) };
+    if (!this.redactor.registerSecret(value)) {
+      throw new RangeError("redaction registry capacity exceeded");
+    }
+    if (!this.registerSourceValue(value, provenance)) {
+      throw new RangeError("source value registry capacity exceeded");
+    }
     const handle = await this.vault.store(name, value, kind);
-    this.redactor.registerSecret(value);
-    this.registerSensitiveEgress(value, handle);
+    this.registerSensitiveBindings(value, handle);
     return handle;
+  }
+
+  private async guardMemoryWrite(input: unknown, signal?: AbortSignal): Promise<MemoryWriteResult> {
+    const candidate = validateMemoryWriteCandidate(input);
+    if (this.ended || signal?.aborted === true || candidate === null) {
+      const reason: MemoryGuardReason =
+        candidate === null
+          ? memoryWriteCandidateExceedsBounds(input)
+            ? "memory_bounds_exceeded"
+            : "memory_item_invalid"
+          : "memory_write_denied";
+      this.trace.append("memory_write", { allowed: false, reasons: [reason] });
+      return Object.freeze({ allowed: false, findings: [], reasons: [reason] });
+    }
+
+    const baseContext = this.buildContext("PERSISTENCE", {
+      kind: "memoryCandidate",
+      candidate: { value: candidate.content, provenance: candidate.provenance },
+    });
+    const phase = await runPhase(
+      this.registry,
+      "PERSISTENCE",
+      signal === undefined ? baseContext : { ...baseContext, signal },
+      this.limits,
+    );
+    this.recordTierMetrics("PERSISTENCE", phase.tierMetrics);
+    const findings = phase.results.flatMap((result) => result.findings);
+    for (const result of phase.results) {
+      this.trace.append("scan_result", {
+        scanner: result.scanner,
+        verdict: result.verdict,
+        severity: result.severity,
+      });
+      for (const finding of result.findings) {
+        this.trace.append("finding", {
+          id: finding.id,
+          category: finding.category,
+          sourceType: finding.source.type,
+          evidenceHash: hash(finding.evidence),
+          provenance: finding.provenance,
+        });
+      }
+    }
+
+    const completedRequiredDetectors = new Set(phase.results.map((result) => result.scanner));
+    const incomplete =
+      isAbortSignalAborted(signal) ||
+      phase.failures.length > 0 ||
+      phase.oversized ||
+      !completedRequiredDetectors.has("memory-write") ||
+      !completedRequiredDetectors.has("secret-sensitive") ||
+      phase.results.some(
+        (result) => result.verdict === "block" || result.metadata?.["failureKind"] !== undefined,
+      );
+    if (incomplete) {
+      const reason: MemoryGuardReason = "memory_scan_incomplete";
+      this.trace.append("memory_write", {
+        allowed: false,
+        reasons: [reason],
+        findingCount: findings.length,
+        provenance: candidate.provenance,
+      });
+      return Object.freeze({ allowed: false, findings, reasons: [reason] });
+    }
+
+    const materializedSpans = await this.materializeSensitiveSpans(
+      candidate.content,
+      phase.sanitizationSpans,
+    );
+    const content = this.redactor.redact(
+      applySanitizationPipeline(candidate.content, materializedSpans, phase.sanitizedTexts),
+    );
+    const markers = memoryMarkers(findings);
+    const sensitivity = findings.some((finding) => finding.category === "secret_detected")
+      ? "secret"
+      : markers.length > 0
+        ? "sensitive"
+        : "none";
+    const item = createStoredMemoryItem({
+      content,
+      provenance: candidate.provenance,
+      sensitivity,
+      markers,
+    });
+    this.trace.append("memory_write", {
+      allowed: true,
+      contentHash: item.contentHash,
+      sensitivity: item.sensitivity,
+      markers: item.markers,
+      findingCount: findings.length,
+      provenance: item.provenance,
+    });
+    return Object.freeze({ allowed: true, item, findings, reasons: [] });
+  }
+
+  private guardMemoryRead(input: unknown, signal?: AbortSignal): UntrustedContent {
+    if (this.ended || signal?.aborted === true) {
+      this.trace.append("memory_read", { allowed: false, reasons: ["memory_read_denied"] });
+      throw new MemoryGuardError("memory_read_denied");
+    }
+    const shaped = validateStoredMemoryItemShape(input);
+    if (shaped === null) {
+      this.trace.append("memory_read", { allowed: false, reasons: ["memory_item_invalid"] });
+      throw new MemoryGuardError("memory_item_invalid");
+    }
+    if (memoryItemHash(shaped) !== shaped.contentHash) {
+      this.trace.append("memory_read", {
+        allowed: false,
+        reasons: ["memory_content_hash_mismatch"],
+      });
+      throw new MemoryGuardError("memory_content_hash_mismatch");
+    }
+    const datum = memoryReadDatum(shaped);
+    this.registerSourceValue(shaped.content, shaped.provenance, signal);
+    this.registerSourceOriginBinding(shaped.content, shaped.provenance);
+    this.releaseUntrustedContext(shaped.provenance, "memory_read");
+    const released = wrapUntrustedContent({ content: datum.value, provenance: datum.provenance });
+    this.trace.append("memory_read", {
+      allowed: true,
+      contentHash: shaped.contentHash,
+      sensitivity: shaped.sensitivity,
+      markers: shaped.markers,
+      storedProvenance: shaped.provenance,
+      releasedProvenance: released.provenance,
+    });
+    return released;
   }
 
   on<K extends keyof SessionEvents>(
@@ -483,6 +646,17 @@ export class SecuritySession {
         injectionFinding.severity === "critical" ? "critical_finding" : "high_confidence_injection",
       );
       verdict = "RESTRICT";
+    } else if (
+      assessment.deterministic.some(
+        (finding) =>
+          finding.category === "encoded_payload_limit" ||
+          finding.category === "scanner_unavailable",
+      )
+    ) {
+      // An incomplete deterministic perception pass is low-confidence
+      // evidence, not a clean observation. Preserve WARN as the assessment,
+      // but monotonically restrict the session before later side effects.
+      this.applyRiskSignal("hidden_injection");
     }
 
     return {
@@ -595,7 +769,7 @@ export class SecuritySession {
       ...helperTraceMetadata(action),
     });
 
-    const egress = this.actionEgressEvaluation(action, intent);
+    const egress = await this.actionEgressEvaluation(action, intent);
     const exfiltrationReasons = this.crossOriginExfiltrationReasons(action, egress);
     const builtInReasons = uniqueReasons([
       ...(this.requiredGuardUnavailable && isHighImpact(action)
@@ -929,6 +1103,8 @@ export class SecuritySession {
     const sanitized = this.redactor.redact(
       applySanitizationPipeline(content, materializedSpans, phase.sanitizedTexts),
     );
+    this.registerSourceValue(sanitized, provenance);
+    this.registerSourceOriginBinding(sanitized, provenance);
     this.releaseUntrustedContext(provenance, "tool_output");
     return wrapUntrustedContent({ content: sanitized, provenance });
   }
@@ -947,12 +1123,17 @@ export class SecuritySession {
         continue;
       }
       const value = base.slice(span.start, span.end);
-      if (value.length === 0 || this.vault === undefined) {
+      if (value.length === 0) {
         output.push({ ...span, replacement: "[REDACTED:SENSITIVE]" });
         continue;
       }
       this.redactor.registerSecret(value);
-      this.registerSensitiveEgress(value);
+      this.registerSourceValue(value, span.provenance);
+      this.registerSourceOriginBinding(value, span.provenance);
+      if (this.vault === undefined) {
+        output.push({ ...span, replacement: "[REDACTED:SENSITIVE]" });
+        continue;
+      }
       try {
         const pattern = marker[2] ?? "detected";
         const kind = marker[1] as SecretHandle["kind"];
@@ -961,7 +1142,7 @@ export class SecuritySession {
           value,
           kind,
         );
-        this.registerSensitiveEgress(value, handle);
+        this.registerSensitiveBindings(value, handle);
         output.push({ ...span, replacement: serializeHandle(handle) });
       } catch {
         // Capacity/expiry errors fail closed: never release the matched value.
@@ -1045,12 +1226,15 @@ export class SecuritySession {
     this.activeSecretResolvers.clear();
     this.approvedSecretSinks.clear();
     this.sensitiveEgressBindings.clear();
+    this.sourceSinkCheck.clear();
     this.unsubscribeEvents();
     this.trace.append("session_end", { risk: this.risk, score: this.score });
     if (this.vault !== undefined) {
       await this.vault.invalidateSession();
     }
-    return this.trace.document();
+    const document = this.trace.document();
+    this.redactor.clear();
+    return document;
   }
 
   private recordTierMetrics(phase: SecurityPhase, metrics: readonly PhaseTierMetric[]): void {
@@ -1264,7 +1448,10 @@ export class SecuritySession {
     this.applyNetworkRisk(decision.reasons);
   }
 
-  private inspectEgress(payload: EgressPayload, signal?: AbortSignal): EgressInspection {
+  private async inspectEgress(
+    payload: EgressPayload,
+    signal?: AbortSignal,
+  ): Promise<EgressInspection> {
     if (this.ended) {
       return {
         verdict: "block",
@@ -1273,27 +1460,90 @@ export class SecuritySession {
         matchCount: 0,
       };
     }
-    const result = this.egressInspector.inspect(payload, signal);
+    const phaseContext = this.buildContext("EGRESS", {
+      kind: "egressPayload",
+      payload: { value: payload.value, provenance: payload.provenance },
+    });
+    const phase = await runPhase(
+      this.registry,
+      "EGRESS",
+      signal === undefined ? phaseContext : { ...phaseContext, signal },
+      this.limits,
+    );
+    this.recordTierMetrics("EGRESS", phase.tierMetrics);
+    for (const result of phase.results) {
+      this.trace.append("scan_result", {
+        scanner: result.scanner,
+        verdict: result.verdict,
+        severity: result.severity,
+      });
+      for (const finding of result.findings) {
+        this.trace.append("finding", {
+          id: finding.id,
+          category: finding.category,
+          sourceType: finding.source.type,
+          evidenceHash: hash(finding.evidence),
+          provenance: finding.provenance,
+        });
+      }
+    }
+    for (const span of phase.sanitizationSpans) {
+      if (!isSensitiveMarker(span.replacement)) continue;
+      const value = payload.value.slice(span.start, span.end);
+      if (value.length === 0) continue;
+      this.redactor.registerSecret(value);
+      this.registerSourceValue(value, span.provenance, signal);
+      this.registerSourceOriginBinding(value, span.provenance);
+    }
+    if (
+      phase.failures.length > 0 ||
+      phase.oversized ||
+      phase.results.some((result) => result.metadata?.["failureKind"] !== undefined)
+    ) {
+      const incomplete: EgressInspection = {
+        verdict: "block",
+        reasons: [REASON_CODES.egress_inspection_incomplete],
+        inspectedBytes: payload.byteLength,
+        matchCount: 0,
+      };
+      this.trace.append("egress_inspection", {
+        sink: payload.sink,
+        verdict: incomplete.verdict,
+        inspectedBytes: incomplete.inspectedBytes,
+        matchCount: 0,
+        reasons: incomplete.reasons,
+      });
+      return incomplete;
+    }
+    const result = this.sourceSinkCheck.inspect(payload, signal);
     if (result.verdict === "block" || result.matchCount > 0) {
       this.trace.append("egress_inspection", {
         sink: payload.sink,
         verdict: result.verdict,
         inspectedBytes: result.inspectedBytes,
         matchCount: result.matchCount,
+        ...(result.matchedSources !== undefined
+          ? {
+              sources: result.matchedSources.map((source) => ({
+                fingerprint: source.fingerprint,
+                provenance: source.provenance,
+              })),
+            }
+          : {}),
         ...(result.reasons.length > 0 ? { reasons: result.reasons } : {}),
       });
     }
     return result;
   }
 
-  private actionEgressEvaluation(
+  private async actionEgressEvaluation(
     action: CanonicalAction,
     intent?: ActionIntent,
-  ): ActionEgressEvaluation {
+  ): Promise<ActionEgressEvaluation> {
     const reasons = new Set<ReasonCode>();
     let matchCount = 0;
     for (const payload of actionEgressPayloads(action, intent)) {
-      const result = this.inspectEgress(payload);
+      const result = await this.inspectEgress(payload);
       matchCount += result.matchCount;
       if (result.verdict === "block") for (const reason of result.reasons) reasons.add(reason);
     }
@@ -1341,22 +1591,50 @@ export class SecuritySession {
     }).reasons;
   }
 
-  private registerSensitiveEgress(value: string, handle?: SecretHandle): void {
+  private registerSourceValue(
+    value: string,
+    provenance: DataProvenance,
+    signal?: AbortSignal,
+  ): boolean {
+    return this.sourceSinkCheck.register({ value, provenance }, signal) !== "incomplete";
+  }
+
+  private registerSourceOriginBinding(value: string, provenance: DataProvenance): void {
+    if (provenance.origin === undefined) return;
+    this.addSensitiveBinding(hash(value), {
+      origins: new Set([provenance.origin]),
+      fieldTypes: new Set(EGRESS_SINKS),
+    });
+  }
+
+  private registerSensitiveBindings(value: string, handle: SecretHandle): void {
     const fingerprint = hash(value);
-    let bindings = this.sensitiveEgressBindings.get(fingerprint);
-    if (bindings === undefined) {
-      bindings = [];
-      this.sensitiveEgressBindings.set(fingerprint, bindings);
-    }
-    if (handle === undefined) return;
     for (const binding of this.contract.secrets ?? []) {
       if (binding.name === handle.name && binding.kind === handle.kind) {
-        bindings.push({
+        this.addSensitiveBinding(fingerprint, {
           origins: new Set(binding.origins),
           fieldTypes: new Set(binding.fieldTypes),
         });
       }
     }
+  }
+
+  private addSensitiveBinding(fingerprint: string, binding: SensitiveEgressBinding): void {
+    let bindings = this.sensitiveEgressBindings.get(fingerprint);
+    if (bindings === undefined) {
+      bindings = [];
+      this.sensitiveEgressBindings.set(fingerprint, bindings);
+    }
+    if (
+      bindings.some(
+        (existing) =>
+          setEquals(existing.origins, binding.origins) &&
+          setEquals(existing.fieldTypes, binding.fieldTypes),
+      )
+    ) {
+      return;
+    }
+    bindings.push(binding);
   }
 
   private evaluateRouteRequest(mutation: NetworkMutation, egressInspection?: EgressInspection) {
@@ -1599,7 +1877,7 @@ export class SecuritySession {
 
   private releaseUntrustedContext(
     provenance: DataProvenance,
-    source: "observation" | "tool_output",
+    source: "observation" | "tool_output" | "memory_read",
   ): void {
     const validated = validateDataProvenance(provenance);
     if (validated === null)
@@ -1613,6 +1891,29 @@ export class SecuritySession {
 
 function nowIso(clock: SessionClock): string {
   return new Date(clock.now()).toISOString();
+}
+
+function isSensitiveMarker(value: string): boolean {
+  return /^\[\[OAF_SENSITIVE:(?:SECRET|PII|CREDENTIAL):[a-z0-9_.-]{1,64}\]\]$/.test(value);
+}
+
+function setEquals<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
+function isAbortSignalAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted ?? false;
+}
+
+function memoryMarkers(findings: readonly Finding[]): readonly MemoryMarker[] {
+  const markers = new Set<MemoryMarker>();
+  if (findings.some((finding) => finding.category === "memory_instruction")) {
+    markers.add("instruction_removed");
+  }
+  if (findings.some((finding) => finding.category === "secret_detected")) {
+    markers.add("sensitive_value_replaced");
+  }
+  return [...markers];
 }
 
 function helperTraceMetadata(

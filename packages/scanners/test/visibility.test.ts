@@ -26,6 +26,12 @@ describe("DOM visibility classifier", () => {
     ["display contents", { display: "contents" }, "CSS_GENERATED", "display-contents"],
     ["pseudo before", { pseudoBefore: "agent instruction" }, "CSS_GENERATED", "pseudo-content"],
     ["pseudo after", { pseudoAfter: "agent instruction" }, "CSS_GENERATED", "pseudo-content"],
+    [
+      "collapsed transform",
+      { transform: "matrix(0, 0, 0, 0, 0, 0)" },
+      "HIDDEN",
+      "collapsed-transform",
+    ],
     ["no dimensions", { dimensions: null }, "ZERO_SIZE", "zero-size"],
     ["zero width", { dimensions: { x: 0, y: 0, width: 0, height: 20 } }, "ZERO_SIZE", "zero-size"],
     ["zero height", { dimensions: { x: 0, y: 0, width: 20, height: 0 } }, "ZERO_SIZE", "zero-size"],
@@ -69,15 +75,16 @@ describe("DOM visibility classifier", () => {
     [
       "tiny width",
       { dimensions: { x: 0, y: 0, width: 1.5, height: 20 } },
-      "VISIBLE_LOW_CONFIDENCE",
+      "ACCESSIBILITY_ONLY",
       "tiny",
     ],
     [
       "tiny height",
       { dimensions: { x: 0, y: 0, width: 20, height: 1.5 } },
-      "VISIBLE_LOW_CONFIDENCE",
+      "ACCESSIBILITY_ONLY",
       "tiny",
     ],
+    ["tiny font", { fontSize: "1px" }, "ACCESSIBILITY_ONLY", "tiny"],
     ["visible default", {}, "VISIBLE", undefined],
     ["visible svg", { tagName: "svg" }, "VISIBLE", undefined],
     ["unknown no tag", { tagName: "" }, "UNKNOWN", "missing-probe-signal"],
@@ -91,7 +98,7 @@ describe("DOM visibility classifier", () => {
       expect(result.visibility, name).toBe(expected);
       if (reason !== undefined) expect(result.reasons).toContain(reason);
     }
-    // Repeat stable signal combinations to protect precedence: 39 base rows + 24 pairs = 63 named cases.
+    // Repeat stable signal combinations to protect classification precedence.
     const pairs = visibilityRows
       .slice(0, 24)
       .map(

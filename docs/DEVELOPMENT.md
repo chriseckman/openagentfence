@@ -32,7 +32,9 @@ pnpm build            # type-check + emit dist/ and .d.ts for every package
 pnpm lint             # ESLint (strict, type-aware) + dependency-direction check
 pnpm typecheck        # tsc --noEmit across all packages (turbo builds deps first)
 pnpm test             # Vitest unit tests (core/policy/vault include coverage gate)
-pnpm test:integration # integration tests (placeholder until M2)
+pnpm test:property    # seeded 1,000-run security properties and decoder/policy fuzzing
+pnpm test:integration # local Playwright integration and fixture/corpus smoke tests
+pnpm promptfoo:check  # Node >=22.22: offline Promptfoo config + local-provider eval
 pnpm api-report       # regenerate API report baselines (etc/*.api.md)
 pnpm docs:check       # relative Markdown link check
 pnpm format:check     # Prettier check
@@ -40,6 +42,25 @@ pnpm format:check     # Prettier check
 
 `pnpm lint` includes `pnpm check:deps`, which enforces the dependency-direction
 rules below from both declared `package.json` dependencies and source imports.
+The Promptfoo example is a root-only development tool and is not a dependency
+of any published package. Its dedicated CI job uses Node 24; the package
+workspace continues to support the root Node 20 floor.
+
+## Property and fuzz tests
+
+The durable seed and run registry is [`fuzz/seeds.json`](../fuzz/seeds.json).
+Every property in `core`, `scanners`, and `policy` runs at least 1,000 cases in
+ordinary tests and in the dedicated PR job. A scheduled workflow raises the
+bounded count to 10,000 with `OAF_PROPERTY_RUNS`; the harness rejects a count
+below the PR floor or above 20,000.
+
+Replay a minimized fast-check failure with
+`OAF_PROPERTY_REPLAY=<property-id>=<path> pnpm test:property` while retaining
+the registered seed. A counterexample must be repaired and committed as a
+synthetic deterministic fixture before the property can return green. See
+[`fuzz/README.md`](../fuzz/README.md) for the fixture convention. Properties
+use injected/pre-aborted signals and deterministic state rather than
+wall-clock timing as a security oracle.
 
 ## Package boundaries
 

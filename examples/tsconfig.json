@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": "..",
+    "paths": {
+      "@openagentfence/core": ["packages/core/src/index.ts"],
+      "@openagentfence/scanners": ["packages/scanners/src/index.ts"],
+      "@openagentfence/stagehand": ["packages/stagehand/src/index.ts"],
+      "@openagentfence/testing": ["packages/testing/src/index.ts"]
+    }
+  },
+  "include": ["stagehand-local/**/*.ts", "screenshot-first/**/*.ts", "promptfoo/**/*.ts"]
+}

@@ -2,10 +2,10 @@
 
 **Status:** Living document. Reflects PRD v0.9
 ([browser-agent-firewall-prd.md](browser-agent-firewall-prd.md)) and the
-accepted ADRs in [adr/](adr/README.md), plus Proposed ADR-0010 where explicitly
-marked. M0 is complete; M1 is reopened for the PRD v0.9 contract backfill;
-M2 is under conformance and security remediation. This document defines the
-boundaries implementation must respect.
+Accepted ADRs in [adr/](adr/README.md). M0-M5 P0 implementation is complete
+with local gate evidence; M6-M8 provenance, verification, hardening, and
+release work remains active. This document defines the boundaries
+implementation must respect.
 
 **Purpose.** The PRD says *what* OpenAgentFence must do and *why*. This
 document says *how the system is divided*: trust boundaries, packages, the
@@ -277,13 +277,13 @@ depends only on `core`.
 - **Allowed dependencies:** `core`; `playwright` as a peer dependency.
 - **Forbidden:** importing Stagehand; scanner logic; policy logic.
 - **Public API direction:** `playwrightAdapter(context | page)`,
-  `firewall.wrap(page)`.
+  `wrapPage(session, page)` from the Playwright adapter package.
 
 ### `@openagentfence/stagehand`
 
 - **Responsibilities:** `BrowserAdapter` for Stagehand v4: maps `observe`
   results to `CanonicalAction[]`; `firewall.authorizeActions(candidates)`;
-  a **secure wrapper** (`firewall.wrap(stagehand)`) that performs
+  a **secure wrapper** (`wrapStagehand(session, stagehand, options)`) that performs
   observe -> normalize -> authorize -> act for `act`, gates `extract`
   outputs through the Perception Guard, supports screenshot-first agents,
   and exposes the escape hatch. Isolates all Stagehand version specifics.
@@ -295,7 +295,8 @@ depends only on `core`.
   capture (Q3).
 - **Forbidden:** duplicating security logic; direct guard-model calls.
 - **Public API direction:** `stagehandAdapter(stagehand)`,
-  `firewall.wrap(stagehand)`, `firewall.authorizeActions()`.
+  `wrapStagehand(session, stagehand, { stateResolver, selfHeal: false })`, and
+  `session.authorizeActions()`.
 
 ### `@openagentfence/testing`
 
@@ -466,6 +467,8 @@ LOOP (per agent step)
 PERSISTENCE GUARD (whenever the application writes to memory)
   -> PERSISTENCE scanners; provenance retained; instructions stripped or
      marked; sensitivity classified                                   [TB8]
+  -> return a closed versioned `kind: data` item with a canonical hash;
+     application owns storage; incomplete scans return no item
 
 MEMORY READ GUARD (before application-stored content enters agent context)
   -> validate item schema + contentHash; retain original provenance; wrap
@@ -635,10 +638,13 @@ stagehand.observe(instruction)          -> candidate actions (untrusted: derived
    -> POST_ACTION scan
 ```
 
-Wrapper behavior (`firewall.wrap(stagehand)`):
+Wrapper behavior (`wrapStagehand(session, stagehand, { stateResolver })`):
 
 - `act(instruction)` internally performs observe -> normalize -> authorize ->
-  state-bind -> re-resolve/revalidate -> exact structured act. Passing the
+  state-bind -> re-resolve/revalidate -> exact structured act. The application
+  must construct the exact supported Stagehand 4.0.1 instance with
+  `selfHeal: false` and attest that trusted setting to the wrapper; otherwise
+  `act` is disabled because self-healing may re-enter model inference. Passing the
   original instruction to `act()` after authorizing a candidate is a security
   defect because it can infer a different operation. If Stagehand cannot expose
   or execute a single validated structured action for a path, that path is
@@ -664,9 +670,9 @@ Wrapper behavior (`firewall.wrap(stagehand)`):
   `session.unsafe.rawPage()` (or equivalent), and each use is recorded in
   the trace with the caller's stated reason.
 - Stagehand-specific behavior (version quirks, primitive shapes) is confined
-  to this package; the adapter declares a v4-only public peer range describing
-  versions the project claims to support and is tested against exact pinned
-  versions in development/conformance tests and CI.
+  to this package. v0.1 claims and tests exactly Stagehand 4.0.1 on the SDK's
+  Node.js 22.18.0 floor; the peer range remains exact until another minor
+  passes compile conformance and the complete recorded offline scenario suite.
 - WebMCP tool manifests, names, schemas, annotations, arguments, and outputs
   are untrusted TB2/TB4 content. Listing and invocation appear in the wrapper
   coverage table. Invocation is disabled until Action Guard, Network Mutation
@@ -780,7 +786,12 @@ See [ADR-0005](adr/0005-executor-side-secret-handles.md).
      untrusted content" apply.
   2. *Value matching at egress:* secrets and PII registered with the vault or
      detected by scanners are matched exactly and in normalized forms
-     (case, whitespace, common encodings) in outbound data.
+     (trim/case variants, one URL encoding, and standard Base64) in outbound
+     data. A session-private registry retains bounded match forms for at most
+     the task lifetime and emits only fingerprints plus source provenance.
+     Deterministic EGRESS scanners feed the same registry before supported
+     pre-effect action or routed-request checks. Registry exhaustion is
+     non-clean and session end clears its state.
 - **v0.2:** source-to-sink data-flow graph so flows like `PRIVATE_FILE ->
   MODEL_CONTEXT -> URL_QUERY -> UNAPPROVED_ORIGIN` are blockable even when
   the text no longer resembles the source.
@@ -868,13 +879,16 @@ Rules:
 
 ## 15. Extension architecture
 
-- **Scanner plugins** implement `SecurityScanner` and ship a manifest
+- **Scanner plugins** are registered through `definePluginScanner()` and ship a manifest
   declaring `permissions` (`page:visible_text`, `page:hidden_text`,
   `page:redacted_text`, `page:screenshot`, `action:metadata`,
   `action:data`, `secrets:handles`) and `network` (boolean). The
-  orchestrator builds a scoped `SecurityContext` view containing only
+  wrapper builds a scoped `SecurityContext` view containing only
   permitted fields; raw secrets are never available to plugins.
-- Plugins are loaded by explicit registration (import + `defineScanner`),
+- Permission-bearing scanners that bypass this wrapper are rejected by the
+  registry. P0 cannot enforce an outbound-network sandbox, so a manifest with
+  `network: true` is unavailable and fails at registration.
+- Plugins are loaded by explicit registration (import + `definePluginScanner`),
   not by name resolution from untrusted configuration; no remote code
   loading; no `eval`. Signed manifests and sandboxed execution are P1.
 - Plugin results are ordinary `ScanResult`s: they can add findings, raise
@@ -948,14 +962,14 @@ remains, the milestone that owns it (see
 |---|----------|--------|------------|
 | Q1 | **Resolved (2026-08-15).** npm scope `@openagentfence` and PyPI `openagentfence` reserved; GitHub repository is `chriseckman/openagentfence`. No trademark search is planned. Confirm the unscoped `openagentfence` npm name only if/when the meta-package (ADR-0008) is built. | PRD §34 open item 1 | Done |
 | Q2 | **Deferred by decision (PRD v0.7).** Start a Rust core only if (a) Python-sidecar demand is demonstrated *and* (b) deterministic scan p50 still misses the 100 ms target on realistic pages after JS profiling. Revisit after v0.1. | PRD §34 open item 2 | Post-v0.1 |
-| Q3 | **Resolved (M2, fallback path; conformance remediation open).** OAF-BROWSER-003 implements against Stagehand's abstraction sharing only `core`. Stagehand 4.0.1 is pinned for compile-time conformance and the peer range is v4-only. Playwright-page reuse plus real runtime `evaluate`/route/popup/download compatibility still requires the M2 conformance task and may not be claimed until its exact-version CI case passes. | This document §3 | M2 |
-| Q4 | **Decided: fail closed; implementation incomplete.** Every Stagehand v4 execution path, including WebMCP list/invoke, agent/batch paths, deterministic page control, `act`, and `extract`, is classified in a tested coverage table. Any path with no complete pre-execution hook is disabled by default with a typed error, listed by `doctor`, and can be reached only through the recorded escape hatch or an explicit per-path opt-in documented as an enforcement gap. | PRD §16, §18.6 | M2 remediation |
+| Q3 | **Resolved (M2).** OAF-BROWSER-003 implements against Stagehand's abstraction sharing only `core`. Stagehand 4.0.1 is pinned for conformance and the peer range is v4-only. The adapter does not claim Playwright-equivalent page/network hooks; applications needing those enforced surfaces use the independent Playwright adapter. | This document §3 | Done |
+| Q4 | **Resolved: fail closed.** Every Stagehand v4 execution path is classified in the tested coverage table. `act` is hooked only with deterministic state resolution; `extract` is bounded/untrusted; page control, agent/batch, WebMCP, secret sinks, and independent network effects are disabled or unavailable with typed errors and zero framework calls. | PRD §16, §18.6 | Done |
 | Q5 | **Resolved by [ADR-0008](adr/0008-policy-loading-and-facade-boundary.md).** The facade accepts a `PolicyEngine` (secure-default engine when omitted); `@openagentfence/policy` exports `loadPolicy(path)`; the path-string one-liner arrives later via an unscoped `openagentfence` meta-package. | PRD §3, §18.2 | Done |
 | Q6 | **Resolved (PRD v0.6 §13.11).** Restricted mode disables *new* secret sink authorizations; sinks approved earlier in the session remain usable by default, and policy may deny them (`secrets.restricted_mode: keep_approved_sinks \| deny_all`). Assigned to OAF-DATA-003. | PRD §13.11, §30 | M3/M4 |
 | Q7 | **Resolved (PRD v0.6 §12).** `Finding` carries optional `severity` and `confidence`; when absent they inherit from the parent `ScanResult`. Assigned to OAF-CORE-001. | PRD §11-12, §15 | M1 |
 | Q8 | **Resolved (PRD v0.7 §13.11).** Defaults: hidden injection +40, cross-origin redirect +20, secret requested +50, unrelated new tab +30; `RESTRICTED` ≥ 40, `READ_ONLY` ≥ 80, `QUARANTINED` ≥ 120; high-confidence injection → `RESTRICTED` and critical finding → `QUARANTINED` regardless of score. Profile-overridable; to be tuned against the benign corpus in M8. Assigned to OAF-SEC-006. | PRD §13.11 | M3 |
 | Q9 | **Resolved and expanded (PRD v0.9 §13.9).** Authorized-action egress remains enforced as documented, while the P0 `NetworkMutation` contract independently represents page/script/form/redirect/WebMCP/service-worker traffic. Routing enforcement is opt-in where required; WebSocket/frame and unobservable surfaces remain explicit gaps until proxy integration. `doctor` reports each surface as enforced, observed-only, or unavailable. | PRD §13.9 | M1 contract / M2 adapters / M4 enforcement |
-| Q10 | **Resolved (PRD v0.8 §13.12).** `session.memory.guardWrite(item)` and `guardRead(item)`; storage is application-owned; provenance and content hash persist as sidecar fields. Minimum read enforcement is P0 in OAF-PROV-005 to satisfy INV-07; OAF-PROV-006 adds enhanced cross-session reinspection and policy in P1. | PRD §13.12 | M6 |
+| Q10 | **Resolved and implemented (PRD v0.8 §13.12).** `session.memory.guardWrite(item)` runs required deterministic PERSISTENCE scanners and returns a closed canonical-hashed `kind: data` item or no storable item; `guardRead(item)` verifies schema/hash, preserves origin metadata under memory trust, and activates the taint floor. Storage remains application-owned. OAF-PROV-006 adds enhanced cross-session reinspection and policy in P1. | PRD §13.12 | M6 PS-003 |
 | Q11 | **Resolved (PRD v0.7 §13.11).** `RESTRICTED`: `READ`, `SCROLL`, same-site `NAVIGATE`, same-origin `CLICK`/`TYPE`/`FILL` without secrets, contract `DOWNLOAD`; rest approval/block. `READ_ONLY`: `READ`, `SCROLL`, same-site link `NAVIGATE` only; no forms, typing, or secrets. `QUARANTINED`: observation only. See §12. | PRD §13.11 | M3 |
 | Q12 | **Resolved (PRD v0.6 §36 Phase 5; D-03).** OpenAI-compatible, Ollama, custom callback, Anthropic, Google/Gemini, and xAI have direct-HTTP P0 adapters. OpenCode 1.18.18 lacked a verified tool-free strict-JSON contract and is a documented typed-unavailable optional surface. | PRD §13.3, §13.16, §36 | M5 |
 | Q13 | **Resolved.** Deterministic scanners run concurrently under one phase deadline; sanitizations apply sequentially by priority, later ones operating on already-sanitized text, most-restrictive-wins on overlap (removal beats replacement), each recorded in the trace; semantic scanners run with configurable concurrency (default 2). See §6. Assigned to OAF-CORE-008. | This document §6 | M1 |

@@ -1,0 +1,367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/benchmark-report.schema.json",
+  "title": "OpenAgentFence benchmark report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "generatedAt",
+    "profile",
+    "seed",
+    "metadata",
+    "caseIds",
+    "applicability",
+    "measurements",
+    "metrics",
+    "comparison",
+    "reportHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "runId": { "$ref": "#/$defs/safeText" },
+    "generatedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "maxCases", "caseTimeoutMs", "runTimeoutMs"],
+      "properties": {
+        "name": { "enum": ["pr", "nightly", "full", "custom"] },
+        "maxCases": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "caseTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "runTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 }
+      }
+    },
+    "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpusHash",
+        "corpusSchemaVersion",
+        "policyHash",
+        "framework",
+        "browser",
+        "primaryAgent",
+        "guardProviders",
+        "runnerVersion"
+      ],
+      "properties": {
+        "corpusHash": { "$ref": "#/$defs/hash" },
+        "corpusSchemaVersion": { "$ref": "#/$defs/safeText" },
+        "policyHash": { "$ref": "#/$defs/hash" },
+        "framework": { "$ref": "#/$defs/component" },
+        "browser": { "$ref": "#/$defs/component" },
+        "primaryAgent": { "$ref": "#/$defs/modelComponent" },
+        "guardProviders": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/modelComponent" }
+        },
+        "runnerVersion": { "$ref": "#/$defs/safeText" }
+      }
+    },
+    "caseIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/safeText" }
+    },
+    "applicability": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/applicability" }
+    },
+    "measurements": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8192,
+      "items": { "$ref": "#/$defs/measurement" }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unguarded", "guarded"],
+      "properties": {
+        "unguarded": { "$ref": "#/$defs/aggregate" },
+        "guarded": { "$ref": "#/$defs/aggregate" }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["addedMedianLatencyMs", "tokenDelta", "costDeltaUsd"],
+      "properties": {
+        "addedMedianLatencyMs": { "$ref": "#/$defs/nullableNumber" },
+        "tokenDelta": { "$ref": "#/$defs/nullableNumber" },
+        "costDeltaUsd": { "$ref": "#/$defs/nullableNumber" }
+      }
+    },
+    "reportHash": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "safeText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\r\\n\\u0000`|<>&]+$"
+    },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "version": {
+      "type": "string",
+      "pattern": "^(?:not_applicable|[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$"
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "$ref": "#/$defs/safeText" },
+        "version": { "$ref": "#/$defs/version" }
+      }
+    },
+    "modelComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "model"],
+      "properties": {
+        "name": { "$ref": "#/$defs/safeText" },
+        "version": { "$ref": "#/$defs/version" },
+        "model": { "$ref": "#/$defs/safeText" }
+      }
+    },
+    "outcomeKey": {
+      "enum": [
+        "attackSuccess",
+        "exfiltrationSuccess",
+        "unauthorizedActionSuccess",
+        "unauthorizedOriginTransition",
+        "unauthorizedNetworkMutation",
+        "secretResolutionBypass",
+        "injectionDetection",
+        "falsePositive",
+        "legitimateCompletion",
+        "restrictedRecovery",
+        "actionIntentMismatchBlocked"
+      ]
+    },
+    "outcomeStatus": { "enum": ["success", "failure", "not_applicable", "unsupported"] },
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "outcomes", "guardOpportunity"],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/safeText" },
+        "outcomes": {
+          "type": "array",
+          "maxItems": 11,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/outcomeKey" }
+        },
+        "guardOpportunity": { "type": "boolean" }
+      }
+    },
+    "outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attackSuccess",
+        "exfiltrationSuccess",
+        "unauthorizedActionSuccess",
+        "unauthorizedOriginTransition",
+        "unauthorizedNetworkMutation",
+        "secretResolutionBypass",
+        "injectionDetection",
+        "falsePositive",
+        "legitimateCompletion",
+        "restrictedRecovery",
+        "actionIntentMismatchBlocked"
+      ],
+      "properties": {
+        "attackSuccess": { "$ref": "#/$defs/outcomeStatus" },
+        "exfiltrationSuccess": { "$ref": "#/$defs/outcomeStatus" },
+        "unauthorizedActionSuccess": { "$ref": "#/$defs/outcomeStatus" },
+        "unauthorizedOriginTransition": { "$ref": "#/$defs/outcomeStatus" },
+        "unauthorizedNetworkMutation": { "$ref": "#/$defs/outcomeStatus" },
+        "secretResolutionBypass": { "$ref": "#/$defs/outcomeStatus" },
+        "injectionDetection": { "$ref": "#/$defs/outcomeStatus" },
+        "falsePositive": { "$ref": "#/$defs/outcomeStatus" },
+        "legitimateCompletion": { "$ref": "#/$defs/outcomeStatus" },
+        "restrictedRecovery": { "$ref": "#/$defs/outcomeStatus" },
+        "actionIntentMismatchBlocked": { "$ref": "#/$defs/outcomeStatus" }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "configuration",
+        "outcomes",
+        "guard",
+        "latencyMs",
+        "usage",
+        "networkMutations"
+      ],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/safeText" },
+        "configuration": { "enum": ["unguarded", "guarded"] },
+        "outcomes": { "$ref": "#/$defs/outcomes" },
+        "latencyMs": { "type": "number", "minimum": 0, "maximum": 60000 },
+        "guard": { "$ref": "#/$defs/guard" },
+        "usage": { "$ref": "#/$defs/usage" },
+        "networkMutations": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/networkMutation" }
+        }
+      }
+    },
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "calls", "reservedTokens", "budgetExhausted"],
+      "properties": {
+        "status": { "enum": ["invoked", "not_invoked", "not_applicable", "unsupported"] },
+        "calls": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "reservedTokens": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+        "budgetExhausted": { "enum": ["none", "calls", "tokens", "calls_and_tokens"] }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["measured", "unsupported"] },
+        "inputTokens": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+        "outputTokens": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+        "costUsd": { "type": "number", "minimum": 0, "maximum": 1000000 }
+      }
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator", "unsupported", "notApplicable", "rate"],
+      "properties": {
+        "numerator": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "denominator": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "unsupported": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "notApplicable": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "rate": { "anyOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "null" }] }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcomes",
+        "guardInvocation",
+        "guardCallBudgetExhaustion",
+        "guardTokenBudgetExhaustion",
+        "totalGuardCalls",
+        "guardCallsPerApplicableCase",
+        "totalReservedGuardTokens",
+        "latency",
+        "usage",
+        "networkMutations"
+      ],
+      "properties": {
+        "outcomes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/rate" } },
+        "guardInvocation": { "$ref": "#/$defs/rate" },
+        "guardCallBudgetExhaustion": { "$ref": "#/$defs/rate" },
+        "guardTokenBudgetExhaustion": { "$ref": "#/$defs/rate" },
+        "totalGuardCalls": { "type": "integer", "minimum": 0 },
+        "guardCallsPerApplicableCase": { "$ref": "#/$defs/nullableNumber" },
+        "totalReservedGuardTokens": { "type": "integer", "minimum": 0 },
+        "latency": { "type": "object" },
+        "usage": { "type": "object" },
+        "networkMutations": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/networkMutationAggregate" }
+        }
+      }
+    },
+    "networkMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initiator", "surface", "enforcement", "attempted", "succeeded"],
+      "properties": {
+        "initiator": {
+          "enum": [
+            "authorized_action",
+            "page_script",
+            "form",
+            "redirect",
+            "webmcp",
+            "service_worker",
+            "unknown"
+          ]
+        },
+        "surface": {
+          "enum": [
+            "navigation",
+            "redirect",
+            "form",
+            "fetch",
+            "headers",
+            "websocket",
+            "send_beacon",
+            "service_worker",
+            "upload",
+            "download",
+            "popup",
+            "webmcp"
+          ]
+        },
+        "enforcement": { "enum": ["enforced", "observed_only", "unavailable"] },
+        "attempted": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "succeeded": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+      }
+    },
+    "networkMutationAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initiator", "surface", "enforcement", "attempted", "succeeded", "successRate"],
+      "properties": {
+        "initiator": {
+          "enum": [
+            "authorized_action",
+            "page_script",
+            "form",
+            "redirect",
+            "webmcp",
+            "service_worker",
+            "unknown"
+          ]
+        },
+        "surface": {
+          "enum": [
+            "navigation",
+            "redirect",
+            "form",
+            "fetch",
+            "headers",
+            "websocket",
+            "send_beacon",
+            "service_worker",
+            "upload",
+            "download",
+            "popup",
+            "webmcp"
+          ]
+        },
+        "enforcement": { "enum": ["enforced", "observed_only", "unavailable"] },
+        "attempted": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "succeeded": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "successRate": { "$ref": "#/$defs/nullableNumber" }
+      }
+    },
+    "nullableNumber": { "anyOf": [{ "type": "number" }, { "type": "null" }] }
+  }
+}

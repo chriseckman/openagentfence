@@ -285,7 +285,7 @@ export function playwrightAdapter(
           const enforced = mutation.enforcement === "enforced";
           const egress =
             enforced && sink.onEgressPayload !== undefined
-              ? inspectRoutedEgress(
+              ? await inspectRoutedEgress(
                   route.request(),
                   mutation.provenance,
                   sink.onEgressPayload.bind(sink),

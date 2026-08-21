@@ -58,6 +58,37 @@ describe("trace writer", () => {
     expect(doc).toContain("[REDACTED]");
   });
 
+  it("redacts registered values from provenance metadata before trace emission", () => {
+    const sentinel = "synthetic-provider-credential-123";
+    const r = new RedactionRegistry();
+    r.registerSecret(sentinel);
+    const writer = new TraceWriter(r);
+    writer.start({ sessionId: "s" });
+    writer.append("finding", {
+      provenance: {
+        trust: "web",
+        origin: `https://${sentinel}.example`,
+        frameOrigin: `https://frame.example/${sentinel}`,
+        pageId: `page-${sentinel}`,
+        elementId: `#node-${sentinel}`,
+      },
+    });
+    const serialized = JSON.stringify(writer.document());
+    expect(serialized).not.toContain(sentinel);
+    expect(serialized).toContain("[REDACTED]");
+  });
+
+  it("bounds registered values and makes egress matching non-clean after exhaustion", () => {
+    const registry = new RedactionRegistry({ maxValues: 1, maxTotalFormBytes: 4096 });
+    expect(registry.registerSecret("first-synthetic-value")).toBe(true);
+    expect(registry.registerSecret("second-synthetic-value")).toBe(false);
+    expect(registry.incomplete).toBe(true);
+    expect(registry.matchEgress("first-synthetic-value").incomplete).toBe(true);
+    registry.clear();
+    expect(registry.incomplete).toBe(false);
+    expect(registry.secretFingerprints()).toEqual([]);
+  });
+
   it("bounds cyclic and deeply nested trace data", () => {
     const writer = new TraceWriter(new RedactionRegistry());
     const cyclic: Record<string, unknown> = {};

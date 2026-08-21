@@ -1,9 +1,4 @@
-export interface BoundingBox {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
+import type { BoundingBox } from "../contracts/finding.js";
 
 export interface ProbeNode {
   readonly selector: string;

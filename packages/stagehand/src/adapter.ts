@@ -15,6 +15,8 @@ import {
 import { randomUUID } from "node:crypto";
 import type { StagehandLike, StagehandObserveResult } from "./types.js";
 
+const MAX_OBSERVED_ACTIONS = 64;
+
 /** Stable fail-closed reason codes emitted by the Stagehand wrapper. */
 export const STAGEHAND_SECURITY_ERROR_CODES = [
   "invalid_observe_response",
@@ -29,6 +31,7 @@ export const STAGEHAND_SECURITY_ERROR_CODES = [
   "untrusted_output_oversized",
   "unsupported_file_effect",
   "unsupported_secret_sink",
+  "unsafe_self_heal_configuration",
   "disabled_path",
 ] as const;
 
@@ -77,6 +80,8 @@ export interface StagehandStateResolver {
 export interface StagehandWrapOptions {
   readonly stateResolver?: StagehandStateResolver;
   readonly maxOutputBytes?: number;
+  /** Trusted application assertion that the wrapped v4 instance was created with `selfHeal: false`. */
+  readonly selfHeal?: false;
 }
 
 export interface StagehandAuthorizationResult {
@@ -131,7 +136,7 @@ function parseObservedAction(value: unknown): StagehandObserveResult | undefined
   const method = value["method"];
   const args = value["arguments"];
   const parsedArgs =
-    args === undefined ? undefined : boundedStringArgs(args) ? [...args] : undefined;
+    args === undefined ? undefined : boundedStringArgs(args) ? Object.freeze([...args]) : undefined;
   if (
     typeof selector !== "string" ||
     selector.length === 0 ||
@@ -153,7 +158,7 @@ function parseObservedAction(value: unknown): StagehandObserveResult | undefined
   });
 }
 
-function boundedStringArgs(value: unknown): value is string[] {
+function boundedStringArgs(value: unknown): value is readonly string[] {
   return (
     Array.isArray(value) &&
     value.length <= 20 &&
@@ -174,7 +179,11 @@ export function stagehandAdapter(stagehand: StagehandLike) {
   return {
     async observe(instruction?: string): Promise<readonly CanonicalAction[]> {
       const response = await stagehand.observe(instruction);
-      if (!isRecord(response) || !Array.isArray(response["data"])) {
+      if (
+        !isRecord(response) ||
+        !Array.isArray(response["data"]) ||
+        response["data"].length > MAX_OBSERVED_ACTIONS
+      ) {
         throw new StagehandSecurityError(
           "invalid_observe_response",
           "Stagehand observe response failed runtime validation",
@@ -210,6 +219,12 @@ export function wrapStagehand(
   const maxOutputBytes = options.maxOutputBytes ?? 65_536;
 
   const actOnce = async (instruction: string, retried: boolean): Promise<unknown> => {
+    if (options.selfHeal !== false) {
+      throw new StagehandSecurityError(
+        "unsafe_self_heal_configuration",
+        "Stagehand act is disabled unless the application configures and attests selfHeal: false",
+      );
+    }
     if (options.stateResolver === undefined) {
       throw new StagehandSecurityError(
         "state_revalidation_unavailable",
@@ -355,9 +370,10 @@ export function wrapStagehand(
       };
     },
     disabled(surface: string): never {
+      void surface;
       throw new StagehandSecurityError(
         "disabled_path",
-        `${surface} is disabled; use the recorded escape hatch`,
+        "The requested Stagehand surface is disabled; use the recorded escape hatch",
       );
     },
     webmcp: Object.freeze({

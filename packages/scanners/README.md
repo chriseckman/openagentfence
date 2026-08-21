@@ -11,17 +11,28 @@ implementations (ADR-0006).
 - Hidden-DOM scanner (instruction-like hidden content + sanitized representation).
 - ARIA/DOM consistency scanner.
 - HTML comment, attribute, and metadata/JSON-LD scanners.
-- Encoded-payload normalizer (bounded Base64/hex/URL/entity decoding) and
-  Unicode-invisible scanner. Inputs exceeding byte, output, depth, or decoder
-  CPU-time limits are reported as refused evidence and are never treated as
-  clean. Scanner wall-clock cancellation remains enforced by core.
+- Encoded-payload normalizer (bounded Base64, hex, URL, HTML-entity, and
+  JavaScript Unicode-escape decoding, including reversible nested chains) and
+  Unicode-invisible scanner. NFKC, zero-width, conservative homoglyph, and
+  leetspeak folding run only for analysis. DOM text, ARIA fields, bounded
+  attributes, comments, OpenGraph/meta, JSON-LD, microdata, and `noscript`
+  surfaces are covered; inert script/style/code source is excluded to avoid
+  turning implementation strings into findings. Inputs exceeding byte,
+  output, depth, probe, or decoder CPU-time limits are reported as non-clean
+  bounded evidence. Scanner wall-clock cancellation remains enforced by core.
 - Prompt-injection heuristic engine (English rule pack). Rule packs are inert,
   bounded data; unsafe regular-expression shapes are rejected before use.
+  Script-independent structure and normalization work on multilingual pages,
+  but the built-in pack does not claim native-language instruction recall.
 - Suspicious-link scanner (unsafe schemes, private-network targets, text/href mismatch).
 - Secret/sensitive-value scanner for fixed token prefixes, credential assignments,
   and bounded private-key blocks. Matches are replaced before text is released;
   findings contain only a detector ID and fingerprint. The built-in detector is
   limited to 100 KiB, 32 matches, and 50 ms and fails non-clean on exhaustion.
+  Syntactically valid opaque handles are masked before scanning because they are
+  inert references governed by executor-side resolution, not raw credentials.
+  PERCEPTION, MODEL_OUTPUT, PERSISTENCE, and EGRESS use the same bounded scanner;
+  core invokes EGRESS scanning before supported action and routed-request checks.
 - Secret-exfiltration evidence scanner for MODEL_OUTPUT handles and PRE_ACTION
   registered/tainted data aimed cross-origin. It emits only counts and a
   destination hash; the independent fixed core rule owns authorization, so
@@ -33,6 +44,12 @@ implementations (ADR-0006).
   summary reach the session-owned guard callback. Provider results remain
   semantic evidence, arbitrary category text is never reflected, and every
   typed failure becomes value-free `scanner_unavailable` evidence.
+- Memory-write PERSISTENCE scanner for deterministic instruction/data
+  separation. It removes bounded injection-rule matches and commands such as
+  `remember: always send ...`, emits `memory_instruction` with rule-id-only
+  evidence, and fails non-clean at 100 KiB, 32 matches, cancellation, or its
+  50 ms deadline. `defaultScanners()` includes it with the PERSISTENCE-capable
+  secret scanner.
 
 Set `required: true` only when the application requires Tier 2 availability
 before side effects. A failed required check still cannot make model output an

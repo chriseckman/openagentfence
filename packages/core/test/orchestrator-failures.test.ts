@@ -5,9 +5,10 @@ import {
   defineScanner,
   riskAggregator,
   REASON_CODES,
+  OpenAgentFence,
 } from "../src/index.js";
 import type { ScanResult, SecurityContext } from "../src/index.js";
-import { mkContext, mkAction } from "./helpers.js";
+import { fakeAdapter, mkContext, mkAction, mkFinding } from "./helpers.js";
 
 const LIMITS = { maxNodes: 100, maxTextLength: 100, phaseDeadlineMs: 500, scannerConcurrency: 2 };
 
@@ -98,6 +99,48 @@ describe("orchestrator failure classification (INV-09)", () => {
     });
     const result = await runPhase(registry, "PERCEPTION", ctx, LIMITS);
     expect(result.failures).toEqual([{ scanner: "observation", kind: "oversized" }]);
+    expect(result.results[0]).toMatchObject({
+      scanner: "observation",
+      verdict: "warn",
+      findings: [{ category: "scanner_unavailable", recommendedAction: "warn" }],
+      metadata: { failureKind: "oversized" },
+    });
+  });
+
+  it("retains a low-confidence warning while restricting after incomplete perception", async () => {
+    const session = new OpenAgentFence({
+      adapter: fakeAdapter(),
+      scanners: [
+        defineScanner({
+          id: "bounded-perception",
+          phases: ["PERCEPTION"],
+          kind: "deterministic",
+          scan: async () => ({
+            scanner: "bounded-perception",
+            kind: "deterministic",
+            verdict: "warn",
+            severity: "medium",
+            findings: [
+              mkFinding("bounded", "encoded_payload_limit", {
+                severity: "medium",
+                recommendedAction: "warn",
+              }),
+            ],
+          }),
+        }),
+      ],
+    }).start({ task: "inspect bounded content" });
+
+    const perception = await session.observe();
+    expect(perception.assessment.verdict).toBe("WARN");
+    expect(session.riskState).toBe("RESTRICTED");
+    const trace = await session.end();
+    expect(trace.events).toContainEqual(
+      expect.objectContaining({
+        kind: "risk_change",
+        data: expect.objectContaining({ signal: "hidden_injection" }),
+      }),
+    );
   });
 
   it("a timed-out deterministic PRE_ACTION scanner still fails closed", async () => {

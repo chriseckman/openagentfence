@@ -95,10 +95,34 @@ declared by the trusted secret binding; missing metadata, cancellation, and
 overflow block with stable reasons.
 
 Raw inspected values never enter findings, plugins, network records, events, or
-traces. Trace schema 1.3 records only sink, verdict, byte/match counts, and
-stable reasons. Canonical actions cover URL query/fragment, typed/message/form
-data, and upload metadata. Browser request bodies are inspected only through a
-measured pre-effect adapter hook.
+traces. Trace schema 1.6 records only sink, verdict, byte/match counts, stable
+reasons, and bounded fingerprint/provenance source evidence. Canonical actions
+cover URL query/fragment, typed/message/form data, and upload metadata. Browser
+request bodies are inspected only through a measured pre-effect adapter hook.
+
+### Coarse source-to-sink provenance (`OAF-PROV-003`)
+
+`SourceValueRegistry` is session-private and registers sensitive values found
+by deterministic scanners plus tainted extraction results. It retains only
+bounded raw/normalized forms needed for matching and exposes SHA-256
+fingerprints with `DataProvenance`. Defaults are 256 values, eight provenance
+records per value, 64 source records per match, 4 MiB of normalized forms,
+64 KiB per value, and a 30-minute lifetime capped by the task duration.
+Capacity, byte, provenance, cancellation, and matching exhaustion are
+non-clean; `SecuritySession.end()` clears both matching and redaction state.
+
+`SourceSinkCheck` composes this registry with the existing DLP inspector. A
+scanner-detected value may return only to its source origin, or to an exact
+trusted-contract secret binding. URL, form, upload, message, and routed request
+data headed elsewhere block before supported pre-effect hooks continue. EGRESS
+scanners run before each inspection so newly detected outbound values enter the
+same canonical registry. Valid opaque handles are excluded from raw-secret
+detection and remain governed by executor-side sink resolution.
+
+This is value matching, not a character-level flow graph. D-11 covers exact,
+trim/case, one URL encoding, and standard Base64 forms; rewording, encryption,
+recursive encodings, Base64URL, and Unicode folding can evade it. The monotonic
+session taint floor and fixed cross-origin rule remain the conservative backstop.
 
 ### Fixed cross-origin exfiltration rule (`OAF-DATA-006`)
 
@@ -115,6 +139,26 @@ stable `untrusted_cross_origin_egress` plus applicable sink/destination/
 untrusted-navigation reasons, and applies the monotonic `secret_requested`
 risk signal on each rejected attempt. Same-origin or exact-bound NORMAL cases
 still pass every envelope, policy, budget, risk, and state-binding check.
+
+### Persistent memory guard (`OAF-PROV-005`)
+
+Every session exposes `session.memory.guardWrite()` and `guardRead()`; the
+application still owns the memory store. Writes accept only a bounded
+`{ content, provenance }` candidate and require the `memory-write` and
+`secret-sensitive` deterministic PERSISTENCE scanners. Missing, failed,
+cancelled, oversized, or exhausted scans return `allowed: false` with no item.
+Successful writes return a closed version-1 item whose `kind` is always
+`"data"`, whose instruction-like regions and sensitive values are replaced,
+and whose canonical SHA-256 covers content, original provenance, sensitivity,
+markers, schema version, and kind.
+
+Reads accept `unknown`, reject accessors/custom prototypes/unknown keys and
+recompute the complete canonical hash before releasing content. A valid read
+returns `UntrustedContent` with `trust: "memory"`, the original origin/frame/
+page metadata, and `instructionEligible: false`, and activates the monotonic
+web taint floor. Invalid or tampered reads throw a value-free
+`MemoryGuardError`. Trace 1.6 records hash/provenance/marker facts only, never
+memory content. See [the memory guard guide](../../docs/memory-guard.md).
 
 The probe (`buildProbeScript`, versioned `PROBE_VERSION`) collects
 *visibility/geometry signals only* — display, visibility, opacity, dimensions,
@@ -288,3 +332,8 @@ M1 acceptance is covered by the executable conformance gate
 INV-01…INV-21 guarantees to named tests including adversarial regression cases
 (semantic-override, raw-compiler-input, unredacted-trace, false-capability,
 stale-`AuthorizedAction`, observed-only-as-enforced).
+Scanner plugins must be registered with `definePluginScanner()`. The wrapper
+constructs a manifest-scoped context before invocation; permission-bearing
+scanners cannot bypass it through `ScannerRegistry`. P0 has no enforceable
+outbound-network sandbox, so manifests requesting `network: true` fail closed.
+Remote plugin loading and process isolation remain P1.

@@ -1,5 +1,6 @@
 import type { SecurityScanner } from "../scanner/scanner.js";
 import type { SecurityPhase } from "../contracts/phase.js";
+import { isScopedPluginScanner } from "../scanner/define-scanner.js";
 
 /**
  * Scanner registry (ARCHITECTURE §6). Registration is explicit (`defineScanner`
@@ -9,6 +10,9 @@ export class ScannerRegistry {
   private readonly scanners = new Map<string, SecurityScanner>();
 
   register(scanner: SecurityScanner): void {
+    if (!isScopedPluginScanner(scanner)) {
+      throw new TypeError("permissioned scanners require definePluginScanner");
+    }
     if (this.scanners.has(scanner.id)) {
       throw new Error(`scanner already registered: ${scanner.id}`);
     }

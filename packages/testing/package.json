@@ -13,11 +13,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./schemas/corpus-case.schema.json": "./src/schemas/corpus-case.schema.json",
+    "./schemas/benchmark-report.schema.json": "./src/schemas/benchmark-report.schema.json"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "src/schemas/corpus-case.schema.json",
+    "src/schemas/benchmark-report.schema.json"
   ],
   "sideEffects": false,
   "publishConfig": {
@@ -28,6 +32,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src test",
     "test": "vitest run",
+    "test:invariants": "vitest run test/invariants",
+    "benchmark:pr": "vitest run test/benchmark.test.ts",
     "test:integration": "vitest run --passWithNoTests test/integration"
   },
   "dependencies": {

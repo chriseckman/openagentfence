@@ -1,10 +1,8 @@
 # OpenAgentFence Implementation Plan
 
-**Status:** Execution plan. M0 has landed. The original M1 contracts have
-landed, but M1 is reopened for the PRD v0.9 contract backfill. M2 has an
-implemented vertical slice, but remains open for the conformance/security
-remediation listed here; neither milestone may be treated as complete before
-its added P0 tasks pass.
+**Status:** Execution plan. M0-M5 P0 tasks are complete with local gate
+evidence. M6-M8 provenance, adversarial verification, hardening, and release
+tasks remain active; external publication is not claimed.
 This document targets **v0.1** as defined by PRD §27 and is written so that
 autonomous coding agents (see [AGENTS.md](../AGENTS.md)) can pick up individual
 tasks without re-deriving the design.
@@ -541,7 +539,7 @@ before the remaining M2 remediation begins.
 - Implementation notes: The intent binds action/intent ids, browser-context/page id, observation revision, target identity, frame/origin, destination/form action, security-relevant attributes/visibility, policy hash, exact structured-operation hash/reference, creation time, and expiry. It contains no raw secret. Only the Action Guard constructor can apply the brand. State mismatch never mutates the existing intent.
 - Acceptance criteria: A raw `CanonicalAction` is a compile-time error at the guarded executor; serialized intent validates; any bound field change produces a stable mismatch reason; policy hash or expiry mismatch invalidates the action; no framework type enters `core`.
 - Tests required: schema/round-trip tests; type-level brand tests; deterministic fingerprint property tests; changed-target/origin/destination/frame/visibility/expiry table tests; redaction tests.
-- Security considerations: INV-08, INV-19, TB2/TB4/TB5; Proposed ADR-0010 becomes binding only when Accepted.
+- Security considerations: INV-08, INV-19, TB2/TB4/TB5; ADR-0010 was Accepted before implementation.
 - Definition of done: Standard DoD; plus third-party adapter migration notes and an API report showing the deliberate breaking contract change.
 
 ### OAF-CORE-016 — `TrustedIntentContext` isolation and typed `UntrustedContent` contracts   (P0)
@@ -626,7 +624,7 @@ exception.
 - Definition of done: Standard DoD; plus package README documents which Playwright versions are tested.
 
 ### OAF-BROWSER-002 — Playwright secure wrapper skeleton and escape hatch   (P0)
-- Objective: Implement `firewall.wrap(page)` returning a proxy over `Page`/`Locator`/`BrowserContext` whose execution methods (`goto`, `click`, `fill`, `type`, `press`, `selectOption`, `setInputFiles`, `evaluate`, `newPage`, `close`) normalize to `CanonicalAction` and route through the session's Action Guard before delegating; raw handles only through `session.unsafe.rawPage()`.
+- Objective: Implement adapter-owned `wrapPage(session, page)` returning a bounded secure surface over `Page`/`Locator` whose supported execution methods normalize to `CanonicalAction` and route through the session's Action Guard before delegating; raw handles only through the recorded escape hatch.
 - Dependencies: OAF-BROWSER-001, OAF-CORE-009
 - Files/packages affected: `packages/playwright/src/{wrap,normalize,execute}.ts`.
 - Implementation notes: Normalization table: `goto` → `NAVIGATE`; `click` → `CLICK` (or `SUBMIT` when the target is a submit control inside a form — form/submit refinement in OAF-SEC-004); `fill`/`type` → `FILL`/`TYPE`; `setInputFiles` → `UPLOAD`; `evaluate`/`addScriptTag` → `EXECUTE_SCRIPT`; `newPage` → `OPEN_TAB`; `close` → `CLOSE_TAB`; unknown methods → `UNKNOWN`. Until OAF-SEC-003 lands, the wrapper calls the secure-default engine directly through the session; after it lands, the full pipeline. Coverage of the execution surface is enumerated in a table used by tests so a new Playwright method appearing unwrapped is detected (best-effort reflection check at wrap time → warning + trace event).
@@ -636,7 +634,7 @@ exception.
 - Definition of done: Standard DoD; plus documented list of intentionally unwrapped read-only methods.
 
 ### OAF-BROWSER-003 — Stagehand adapter: observe → normalize → `authorizeActions` (Q3)   (P0)
-- Objective: Implement `stagehandAdapter(stagehand)` mapping Stagehand v4 `observe` results to `CanonicalAction[]` with provenance, and `firewall.authorizeActions(candidates)` returning filtered/sanitized actions each with a decision and trace id (PRD §16; ARCHITECTURE §8). **Q3 (approach decided, ARCHITECTURE Q3):** start with a time-boxed spike (≤ half a day): if Stagehand v4 exposes a Playwright-compatible `Page`/context with working `evaluate`, `route`, and popup/download events, reuse the `playwright` adapter package for capture and wrapping (the optional edge); otherwise implement against Stagehand's page abstraction sharing only `core`. Record the spike's finding in ARCHITECTURE Q3.
+- Objective: Implement `stagehandAdapter(stagehand)` mapping Stagehand v4 `observe` results to `CanonicalAction[]` with provenance, and `session.authorizeActions(candidates)` returning filtered/sanitized actions each with a decision and trace id (PRD §16; ARCHITECTURE §8). **Q3 (approach decided, ARCHITECTURE Q3):** start with a time-boxed spike (≤ half a day): if Stagehand v4 exposes a Playwright-compatible `Page`/context with working `evaluate`, `route`, and popup/download events, reuse the `playwright` adapter package for capture and wrapping (the optional edge); otherwise implement against Stagehand's page abstraction sharing only `core`. Record the spike's finding in ARCHITECTURE Q3.
 - Dependencies: OAF-CORE-009, OAF-CORE-011; OAF-BROWSER-001 only if the Q3 spike selects reuse
 - Files/packages affected: `packages/stagehand/src/{adapter,normalize,authorize}.ts`; Stagehand peer dependency with declared range; ARCHITECTURE Q3 update.
 - Implementation notes: Observe results are untrusted (derived from page + model): `instructionProvenance` is `web`-trust once the taint floor applies (OAF-PROV-002), otherwise `application`. Map Stagehand action descriptors to taxonomy types conservatively (unknown → `UNKNOWN`). `authorizeActions` runs the PRE_ACTION pipeline per candidate without executing anything and returns `{ action, decision, traceId }[]`; blocked candidates are omitted from the "safe" list but present in the trace. Isolate all Stagehand version specifics in one module.
@@ -646,7 +644,7 @@ exception.
 - Definition of done: Standard DoD; plus `docs/stagehand.md` stub with the observe/authorize/act example.
 
 ### OAF-BROWSER-004 — Stagehand secure wrapper: `act`, `extract` gating, page control, screenshot-first (Q4)   (P0)
-- Objective: Implement `firewall.wrap(stagehand)`: `act(instruction)` performs observe → normalize → authorize one structured candidate → execute that exact candidate (never a second inference); `extract` results pass through the Perception Guard (PERCEPTION on the source page, MODEL_OUTPUT on the extraction) and are tainted `trust: web`; deterministic page control is wrapped like OAF-BROWSER-002; screenshot-first mode routes screenshots to the primary model while DOM/ARIA is analysed by the firewall and hidden text is withheld. **Q4 (decided: fail closed, ARCHITECTURE Q4):** enumerate every execution path in Stagehand v4, including WebMCP and agent/batch paths; any path without a pre-execution hook is *disabled* by default (typed error naming the escape hatch), listed by `doctor`, and re-enabled only by explicit per-path application opt-in.
+- Objective: Implement adapter-owned `wrapStagehand(session, stagehand, { stateResolver })`: `act(instruction)` performs observe → normalize → authorize one structured candidate → execute that exact candidate (never a second inference); `extract` results pass through the Perception Guard and remain untrusted. **Q4 (decided: fail closed, ARCHITECTURE Q4):** every Stagehand v4 path without a complete pre-execution hook is disabled or unavailable and recorded in the coverage table.
 - Dependencies: OAF-BROWSER-003, OAF-BROWSER-013, OAF-CORE-009. It uses the
   session's existing secure-default authorization path during M2; full
   OAF-SEC-003 integration remains M3 work.
@@ -1234,8 +1232,9 @@ The data-flow graph is v0.2 and is not planned here.
 
 Execution history: OAF-PROV-001 and OAF-PROV-002 were pulled forward and
 completed in the M4 security-enforcement series (PS-012 and PS-013). They stay
-listed below as durable dependency history. OAF-PROV-003 and OAF-PROV-005
-remain the M6 P0 work; OAF-PROV-004 and OAF-PROV-006 remain P1.
+listed below as durable dependency history. OAF-PROV-003 was completed in the
+M6 verification/release series (PS-002); OAF-PROV-005 was completed in PS-003.
+OAF-PROV-004 and OAF-PROV-006 remain P1.
 
 | ID | Title | Priority | Depends on |
 |----|-------|----------|------------|
@@ -1266,7 +1265,7 @@ remain the M6 P0 work; OAF-PROV-004 and OAF-PROV-006 remain P1.
 - Security considerations: INV-13, INV-01; A1, A7, A14; THREAT_MODEL §5.1 E4.
 - Definition of done: Standard DoD; plus documented conservativeness (THREAT_MODEL §9 residual risk).
 
-### OAF-PROV-003 — Value-matching taint at egress and coarse source-to-sink checks   (P0)
+### OAF-PROV-003 — Value-matching taint at egress and coarse source-to-sink checks   (P0, completed in PS-002)
 - Objective: Extend the OAF-DATA-005 matcher registry with scanner-detected sensitive values (secret/PII findings from any phase) and tainted extraction results, and implement the v0.1 coarse source-to-sink checks: `web`-tainted or sensitive data heading to an out-of-scope origin via URL/form/upload/message is `BLOCK` (layer 3), without a data-flow graph (PRD §13.4; ARCHITECTURE §11).
 - Dependencies: OAF-PROV-002, OAF-DATA-005
 - Files/packages affected: `packages/core/src/provenance/{value-registry,source-sink}.ts`, egress integration.
@@ -1286,7 +1285,7 @@ remain the M6 P0 work; OAF-PROV-004 and OAF-PROV-006 remain P1.
 - Security considerations: INV-13; A1 (malicious iframe attacker).
 - Definition of done: Standard DoD.
 
-### OAF-PROV-005 — Memory write/read guard, PERSISTENCE scanners, minimum read enforcement (Q10)   (P0)
+### OAF-PROV-005 — Memory write/read guard, PERSISTENCE scanners, minimum read enforcement (Q10)   (P0, completed in PS-003)
 - Objective: Implement both `session.memory.guardWrite(item) -> { allowed, item, findings }` and the minimum `session.memory.guardRead(item)` enforcement required by INV-07. Writes run PERSISTENCE scanners (injection heuristics, secret/sensitive-data, provenance retention), strip or mark instruction-like content, classify sensitivity, and return an item for application-owned storage. Reads validate the item schema and `contentHash`, retain original provenance, wrap web-derived content as untrusted data rather than instructions, and activate the session taint floor before returning it to agent context (PRD v0.8 §13.12; ARCHITECTURE §5).
 - Dependencies: OAF-PROV-001, OAF-PROV-002, OAF-BROWSER-010, OAF-DATA-001
 - Files/packages affected: `packages/core/src/memory/{guard-write,guard-read,item}.ts`, `packages/scanners/src/persistence/memory-write.ts`, ARCHITECTURE Q10 update, `docs/scanners.md` memory section.
@@ -1336,7 +1335,7 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 | OAF-TEST-015 | TOCTOU, guard-failure, WebMCP, and network-mutation corpus | P0 | OAF-TEST-002, OAF-SEC-010, OAF-DATA-007, OAF-BROWSER-017 |
 | OAF-TEST-016 | Adaptive attack generator using the stable corpus contract | P1 | OAF-TEST-002, OAF-TEST-011 |
 
-### OAF-TEST-001 — Fixture server (no network) and Vitest helpers   (P0)
+### OAF-TEST-001 — Fixture server (no network) and Vitest helpers   (P0, completed in M7 PS-005)
 - Objective: `startFixtureServer({ root, origins })` serving `security-corpus/` over multiple local origins (distinct ports/hostnames mapped via `/etc/hosts`-free techniques such as `127.0.0.1` vs `localhost` vs `[::1]` and per-port origins) with configurable redirects, downloads, form echo endpoints, popup pages, and request capture; helpers `expectBlocked`, `expectVerdict`, `expectFinding`, `expectNoRawSecretIn(obj, sentinels[])` (sentinel-list form; registry-aware form in OAF-DATA-002).
 - Dependencies: OAF-REPO-002
 - Files/packages affected: `packages/testing/src/{server,origins,capture,assertions}/`, `security-corpus/README.md`.
@@ -1346,7 +1345,7 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Security considerations: INV-05 (fixtures hold synthetic values only, checked by a repo lint that flags common real-key formats); TB2 simulation.
 - Definition of done: Standard DoD; plus corpus README describes how to run locally.
 
-### OAF-TEST-002 — Corpus format spec (language-neutral) and loader   (P0)
+### OAF-TEST-002 — Corpus format spec (language-neutral) and loader   (P0, completed in M7 PS-005)
 - Objective: Define `security-corpus/**/case.yml` (or `.json`): `id`, `class` (A1–A20), `invariants` (INV ids), `attackMode` (`static | mutation | adaptive-ready`), `surfaces` (`dom | aria | cross-origin | network | webmcp | memory | exfiltration | guard-provider`), `initiator`, optional bounded state-mutation/generator metadata, `page(s)`, `origins`, task contract, policy, steps, expected verdict/reasons/findings/risk/control, locale, and tags; publish JSON Schema, `loadCorpus()`, and Vitest generator (PRD §19.3, §29.9; ADR-0001 §3).
 - Dependencies: OAF-TEST-001, OAF-CORE-001
 - Files/packages affected: `packages/testing/src/corpus/{schema,load,run-case}.ts`, `packages/testing/schemas/corpus-case.schema.json`, `security-corpus/hidden-dom/display-none-instruction/` seed case (used by OAF-BROWSER-012).
@@ -1356,7 +1355,7 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Security considerations: Cases/generators can never grant capability or mutate expected policy (INV-01); INV-16 (bounded YAML/metadata); INV-19/21 test extensibility.
 - Definition of done: Standard DoD; plus corpus contribution guide (issue template from OAF-REPO-004 links here).
 
-### OAF-TEST-003 — Hidden-DOM and ARIA corpus   (P0)
+### OAF-TEST-003 — Hidden-DOM and ARIA corpus   (P0, completed in M7 PS-006)
 - Objective: Cases for `display:none`, `visibility:hidden`, zero opacity, offscreen, tiny text, zero-size, clipped, transform-hidden, `hidden` attribute, `aria-hidden`, SVG hidden text, `noscript`, hidden iframe, comments-in-hidden-nodes; ARIA: malicious `aria-label`/`aria-description`, accessibility-only instruction on non-interactive node, link text vs accessible name mismatch, PRD §30 scenario; multi-step injection (instruction on page 1, action on page 2) (PRD §19.1).
 - Dependencies: OAF-TEST-002, OAF-BROWSER-006, OAF-BROWSER-007
 - Files/packages affected: `security-corpus/hidden-dom/*`, `security-corpus/aria/*`.
@@ -1365,8 +1364,11 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: generated from cases.
 - Security considerations: A3, A1; INV-01, INV-13.
 - Definition of done: Standard DoD; plus THREAT_MODEL §7 fixture paths updated from "planned" to actual.
+- Completion evidence: 21 attack and 6 benign schema-valid cases execute through
+  Chromium and assert deterministic categories, provenance, sanitized exclusion,
+  risk transition, trace validity, and follow-up cross-origin containment.
 
-### OAF-TEST-004 — Encoding and metadata/attribute corpus   (P0)
+### OAF-TEST-004 — Encoding and metadata/attribute corpus   (P0, completed in M7 PS-006)
 - Objective: Base64/hex/URL/entity/Unicode-escape single and nested encodings, zero-width interleaving, homoglyphs, leetspeak; comments, `title`/`alt`/`placeholder`/`data-*` attributes, meta/OpenGraph/JSON-LD/microdata payloads; oversize/decode-bomb negatives (PRD §19.1).
 - Dependencies: OAF-TEST-002, OAF-BROWSER-008, OAF-BROWSER-009
 - Files/packages affected: `security-corpus/encoding/*`, `security-corpus/hidden-dom/metadata-*`, `security-corpus/hidden-dom/attribute-*`.
@@ -1375,6 +1377,10 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: generated from cases.
 - Security considerations: A4, A17; INV-16, INV-09.
 - Definition of done: Standard DoD.
+- Completion evidence: 20 attack, 4 benign, and 2 resource-limit cases execute
+  through the generated Chromium group. Decoder-depth and probe exhaustion are
+  bounded and produce explicit non-clean evidence; benign siblings cause no
+  hard block or session-risk transition.
 
 ### OAF-TEST-005 — Navigation corpus: redirects, SSRF, popups, high-impact actions   (P0)
 - Objective: Redirect chains (allowed/over-limit/into-blocked-origin), open redirects, look-alike hosts, `javascript:`/`data:` links; SSRF targets (localhost, RFC1918, link-local, metadata endpoints, alternate IP encodings, routed fetch); popups/new tabs to unrelated origins, tab limits, popup inheriting `RESTRICTED`; high-impact pages (`purchase`, `delete`, `publish`, `message`, `change-setting`, `authenticate`) with approval configured/unconfigured; loop-like navigation for budgets (PRD §19.1; THREAT_MODEL §7 `navigation/*`).
@@ -1385,6 +1391,14 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: generated from cases; Playwright-driven.
 - Security considerations: A9, A10, A13, A15, A16; INV-08, INV-10, INV-11, INV-14.
 - Definition of done: Standard DoD.
+- Completion evidence (M7 PS-007): 46 schema-valid cases execute through a
+  generated Chromium group. Enforced initial routed fetch and destination
+  checks prove zero target requests; redirect follow-ups remain
+  `observed_only` and popup handling remains post-creation, with explicit gap,
+  closure/risk, state-inheritance, and trace assertions instead of a false
+  zero-byte claim. Six high-impact classes deny without a handler and pass only
+  through a configured application approval; action/navigation/duration/tab
+  budgets and approval-state mutation fail closed with stable reasons.
 
 ### OAF-TEST-006 — Exfiltration corpus   (P0)
 - Objective: Secret-handle misuse (handle in URL/header/file path/message/unbound form), raw-value leakage paths (value in URL query/fragment, form body, routed POST, upload filename), credential phishing (look-alike login form on attacker origin requesting the bound password), upload coercion (private/downloaded file to attacker origin), PII detected on page A posted to origin B; benign counterparts (bound sink resolves; same-origin form) (PRD §19.1; THREAT_MODEL §5.1, §7).
@@ -1396,7 +1410,20 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Security considerations: A5, A6, A11; INV-04, INV-05, INV-06; PRD §32 "0 successful secret exfiltration".
 - Definition of done: Standard DoD.
 
-### OAF-TEST-007 — Memory poisoning corpus   (P0)
+Completed in M7 PS-008: 26 schema-valid generated cases (22 attacks and four
+benign siblings) cover handles in URL/header/form/message/upload data, raw and
+D-11-normalized query/body/action data, credential phishing, upload
+name/path/body coercion, Page-A PII, exact bound and same-origin delivery, and
+the PRD §30 flow with the semantic provider absent and fake-permissive. Every
+attack uses a runtime-only synthetic value, asserts the local attacker capture
+count is unchanged, validates the redacted trace, and applies the
+registry-aware leak assertion to all applicable artifacts. Playwright 1.62.1
+claims zero-byte network interception only for its measured initial
+navigation/fetch hooks; pre-action authorization proves the remaining action
+surfaces before framework execution without upgrading observed-only transport
+surfaces.
+
+### OAF-TEST-007 — Memory poisoning corpus   (P0, completed in PS-009)
 - Objective: Pages that induce memory writes containing instructions, poisoned facts, secrets, or sensitive data; benign facts; THREAT_MODEL §5.3 scenario; and P0 read-guard cases for malformed items, hash tampering, provenance retention, instruction/data separation, and taint-floor activation.
 - Dependencies: OAF-TEST-002, OAF-PROV-005
 - Files/packages affected: `security-corpus/memory/*`.
@@ -1405,6 +1432,14 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: generated from cases.
 - Security considerations: A12; INV-07, INV-13.
 - Definition of done: Standard DoD.
+- Completion evidence: Eleven generated schema-valid cases load a real local
+  page candidate, call the public memory write guard, serialize the closed item
+  through an application-owned store, and exercise a fresh-session read or an
+  invalid-read denial. The matrix covers two instruction forms, an unverified
+  poisoned fact, secret and sensitive-value replacement, malformed schema,
+  content/provenance hash tampering, instruction-kind relabelling, benign data,
+  provenance retention, data-only release, and taint activation. Runtime-only
+  sentinels are absent from stored JSON, findings, errors, returns, and traces.
 
 ### OAF-TEST-008 — Multilingual variants and benign corpus   (P0)
 - Objective: Non-English and mixed-language variants of hidden-DOM/ARIA/encoding attacks (at least three scripts, including one RTL), and a benign corpus of realistic pages (news, e-commerce, docs, forms, dashboards, pages with legitimate hidden UI) for false-positive measurement (PRD §13.3 multilingual, §24, §32).
@@ -1415,6 +1450,14 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: generated from cases.
 - Security considerations: A1/A3/A4 cross-cutting; PRD §24 false-positive strategy.
 - Definition of done: Standard DoD.
+- Completion evidence: Completed in M6 PS-010. Twelve generated attack cases
+  cover Latin, Japanese, Arabic, and Hebrew pages (including RTL) through
+  bounded Unicode, encoding, hidden-DOM, ARIA, comment, and metadata signals.
+  The 30-page benign matrix spans news, shopping, documentation, forms,
+  dashboards, and legitimate hidden UI; all cases produced zero deterministic
+  `block`/`approve` recommendations, risk score zero, and no risk transition.
+  The built-in lexical pack remains explicitly English-only, so no universal
+  native-language semantic-recall claim is made.
 
 ### OAF-TEST-009 — Stagehand attack scenarios   (P0)
 - Objective: Integration scenarios driving the wrapped Stagehand adapter with **recorded v4 observe/extract/WebMCP payloads** (no live model) against corpus pages: exact structured `act`, authorize-A/execute-B regression, ActionIntent mutation, hidden injection, extract poisoning, malicious tool manifests/outputs, screenshot-first mode, disabled-path coverage, and secret handles (PRD §36 Phase 6.3).
@@ -1425,6 +1468,13 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: this task.
 - Security considerations: INV-08, INV-18; ADR-0002 completeness.
 - Definition of done: Standard DoD; plus `docs/stagehand.md` links the scenarios.
+- Completion evidence: Completed in M7 PS-011 with a closed, bounded, corpus-linked
+  Stagehand 4.0.1 recording set and offline runner. Exact structured execution
+  now requires `selfHeal: false`, deeply freezes the argument vector, bounds
+  observe results, and fails closed across mutation, extraction, screenshot,
+  WebMCP, secret, form/file, agent/batch/page-control, and escape-hatch cases.
+  Node and peer claims match the exact installed SDK; unavailable network and
+  POST_ACTION surfaces remain explicit.
 
 ### OAF-TEST-010 — Promptfoo integration example   (P0)
 - Objective: `examples/promptfoo/` showing how to run Promptfoo's browser-agent indirect-injection tests against an agent wrapped by OpenAgentFence, with the fixture server as target and a guarded-vs-unguarded comparison (PRD §19.2, §27 item 25).
@@ -1435,6 +1485,13 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: compile check.
 - Security considerations: Example must not embed keys; uses env vars.
 - Definition of done: Standard DoD.
+- M7 execution history (2026-08-20): PS-012 pinned Promptfoo 0.122.0 as a
+  root-only development tool, added a typed local file provider and
+  guarded/unguarded loopback comparison, and added config validation plus a
+  real local-provider eval with telemetry/update/sharing/remote generation
+  disabled. CI uses Node 24 because this Promptfoo version requires Node
+  22.22 or newer; no model or credential is used. External agent/model testing
+  remains an explicit application-owned opt-in.
 
 ### OAF-TEST-011 — Benchmark runner   (P0)
 - Objective: `runBenchmark({ corpus, agent, policy, providers })` reporting attack/exfiltration/unauthorized-action success, unauthorized origin-transition and network-mutation rates, secret-resolution bypass, injection recall, false positives, legitimate completion, restricted-mode recovery, ActionIntent mismatch outcomes, guard invocation/budget-exhaustion rates, latency, and model cost/tokens, with pinned framework/model versions and corpus hash in every report (PRD §19.4–19.5, §34 Decision 12).
@@ -1445,6 +1502,14 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: metric unit tests; end-to-end run on a small subset in PR CI.
 - Security considerations: PRD §7.10 measurability; §32 metrics.
 - Definition of done: Standard DoD; plus README states benchmark numbers are absent until v0.1 measurement (OAF-REL-001).
+- M7 execution history (2026-08-20): PS-016 added a deterministic paired
+  guarded/unguarded runner with explicit per-case metric applicability,
+  corpus and report hashes, exact framework/provider/model pins, guard-call
+  and reservation accounting, network-mutation breakdowns, paired latency
+  deltas, and actual-or-unsupported usage/cost reporting. Strict runtime
+  validation recomputes all aggregates and comparison values. PR and
+  scheduled bounded profiles use committed loopback fixtures and a scripted
+  page-reading agent; they make no performance or model-efficacy claim.
 
 ### OAF-TEST-012 — `openagentfence test --corpus` and CI security regression gate   (P0)
 - Objective: CLI command that loads a corpus directory, runs every case against the current packages (Playwright headless), prints a summary with per-class results, exits non-zero on any regression; wired into `ci.yml` as the `security-corpus` **required status check** (PRD §19.3, §29.4, §27 item 24).
@@ -1465,6 +1530,15 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: this task.
 - Security considerations: INV-03, INV-09, INV-12, INV-16, INV-19, INV-20, INV-21; PRD §21 fuzz requirement.
 - Definition of done: Standard DoD.
+- M7 execution history (2026-08-20): PS-013 added sixteen persisted-seed
+  fast-check properties spanning fixed precedence/probabilistic non-authority,
+  compound envelope and risk monotonicity, ActionIntent invalidation/expiry,
+  NetworkMutation capability and correlation non-authority, provider
+  bounds/cancellation, arbitrary contract/policy validation, and bounded
+  decoders/normalizers. PR and ordinary tests run 1,000 cases per property;
+  the scheduled workflow runs 10,000 under a hard 20,000 cap. The first run
+  minimized a non-printable codec-domain counterexample and committed its
+  fail-closed regression fixture.
 
 ### OAF-TEST-014 — Invariant test suite (INV-01…INV-21)   (P0)
 - Objective: One named, documented test (or test group) per invariant in THREAT_MODEL §6, living in `packages/testing/test/invariants/INV-nn.spec.ts`, each stating the invariant text, the boundary, and the fixture/case it uses; the suite is part of the required CI gate. Mapping in §12.3.
@@ -1475,6 +1549,12 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: this task.
 - Security considerations: all invariants.
 - Definition of done: Standard DoD; plus SECURITY.md/THREAT_MODEL note that a fixed vulnerability must add an invariant or corpus case.
+- M7 execution history (2026-08-20): PS-015 added exactly 21 named invariant
+  groups, a closed removal-sensitive A1-A20 deterministic-control/corpus map,
+  direct Threat Model and Security Guarantee Matrix links, a required CI gate,
+  and a manifest-scoped plugin execution repair. The strict corpus is 227 cases
+  across 31 fixtures with canonical hash
+  `a0ce0709c0d5e0fb43189558c8cbb2fc0da1dcafe71cf129f7f0da841327b536`.
 
 ---
 
@@ -1487,6 +1567,14 @@ becomes a regression fixture. Fixture directories follow THREAT_MODEL §7:
 - Tests required: Generated corpus suite plus fixture-helper self-tests and adapter integrations; no test skips an unavailable required hook—such a gap fails the owning capability claim.
 - Security considerations: INV-02, INV-03, INV-05, INV-06, INV-09, INV-16, INV-19, INV-20, INV-21; A18–A20; TB2/TB3/TB5/TB6.
 - Definition of done: Standard DoD; unresolved failures stop the milestone and release gate, never get deleted or weakened.
+- M7 execution history (2026-08-20): PS-014 expanded the strict corpus to 223
+  cases with 31 A18-A20 attack/benign rows. A generated exact-version suite
+  covers every ActionIntent field and combined races, bounded false-safe and
+  failed guard outcomes, independent network correlation/capability behavior,
+  and a live routed zero-byte block. Stagehand 4.0.1 recordings now cover
+  multi-field mutation and malicious WebMCP manifest/schema/annotation/result
+  data with zero SDK calls. Redirect, form, WebSocket, and beacon remain
+  observed-only where measured; service-worker and WebMCP remain unavailable.
 
 ### OAF-TEST-016 — Adaptive attack generator using the stable corpus contract   (P1)
 - Objective: Add an optional bounded adaptive generator that emits candidate cases through the OAF-TEST-002 schema, while the static corpus remains the authoritative P0 regression gate.
@@ -1692,7 +1780,7 @@ the v0.1 tag.
 | Q13 Concurrency model for scanners | Resolved in ARCHITECTURE §6; assigned to OAF-CORE-008 | M1 |
 | Q14 Trace schema versioning and replay contract | Schema resolved in ARCHITECTURE §14; assigned to OAF-CORE-010; replay assigned to OAF-REL-005 (P1) | M1 / M8 |
 | Q15 Local classifier recommendation | Ollama is the local-first provider transport; model recommendation is deferred until reproducible OAF-REL-001 measurements exist (A-01) | M5 transport / M8 measurement |
-| Q16 State-bound authorization / TOCTOU | Proposed ADR-0010; PRD v0.9 requires exact state-bound execution. Accept the ADR before OAF-CORE-015/OAF-BROWSER-014/015/OAF-SEC-010 implementation. Stagehand exact-action defect OAF-BROWSER-013 is already fixed under ADR-0002. | Before M3 |
+| Q16 State-bound authorization / TOCTOU | Resolved by Accepted ADR-0010; OAF-CORE-015, OAF-BROWSER-014/015, and OAF-SEC-010 implement exact state-bound execution. | Done |
 
 ---
 

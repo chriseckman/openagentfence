@@ -76,8 +76,11 @@ The same measured hook performs bounded D-11 egress inspection over URL query,
 header values, and textual request bodies before continuation. Registered raw,
 trim/case, URL-encoded, and standard-Base64 values are aborted unless the exact
 destination and sink are trusted-contract bindings; overflow, cancellation, or
-an unavailable inspector also abort. Network events retain only bounded header
-metadata plus body size/hash and never the inspected body.
+an unavailable inspector also abort. The asynchronous inspection runs
+deterministic EGRESS scanners first and can register newly detected values with
+their source provenance without recording the raw request. Network events
+retain only bounded header metadata plus body size/hash and never the inspected
+body.
 
 Playwright invokes routing only for the first URL of a redirect chain. Later
 redirect hops are therefore **`observed_only`**, not enforced; their origin and

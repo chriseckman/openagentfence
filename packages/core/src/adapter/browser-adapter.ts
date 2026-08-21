@@ -14,7 +14,10 @@ export interface AdapterEventSink {
   onDownload(event: AdapterEvent): void;
   onNetworkMutation?(mutation: NetworkMutation): void;
   /** Ephemeral pre-effect DLP check. Implementations must never retain `payload.value`. */
-  onEgressPayload?(payload: EgressPayload, signal?: AbortSignal): EgressInspection;
+  onEgressPayload?(
+    payload: EgressPayload,
+    signal?: AbortSignal,
+  ): EgressInspection | Promise<EgressInspection>;
   /** Synchronous firewall decision used only by adapters with an active request-abort hook. */
   onRouteRequest?(
     mutation: NetworkMutation,

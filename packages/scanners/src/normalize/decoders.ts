@@ -63,6 +63,19 @@ export function decodeUrlEncoded(input: string): string {
   }
 }
 
+/** Decode bounded JavaScript-style Unicode/hex escapes as inert text. */
+export function decodeUnicodeEscapes(input: string): string {
+  return input.replace(
+    /\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})/gu,
+    (match, wide: string | undefined, narrow: string | undefined) => {
+      const encoded = wide ?? narrow;
+      if (encoded === undefined) return match;
+      const code = Number.parseInt(encoded, 16);
+      return code >= 32 && code <= 0x10ffff ? String.fromCodePoint(code) : " ";
+    },
+  );
+}
+
 const HTML_ENTITIES: Readonly<Record<string, string>> = {
   "&lt;": "<",
   "&gt;": ">",
@@ -133,22 +146,37 @@ export function decodeIterative(
     }
     let next: string | null = null;
     let codec = "";
-    if (/^https?%[0-9A-Fa-f]{2}/.test(current)) {
-      next = decodeUrlEncoded(current);
-      codec = "url";
-    } else if (/^[A-Za-z0-9+/]+={0,2}$/.test(current.replace(/\s+/g, "")) && current.length > 4) {
-      next = decodeBase64(current);
-      codec = "base64";
-    } else if (
-      /^[0-9a-fA-F]+$/.test(current.replace(/\s+/g, "")) &&
-      current.length > 4 &&
-      current.length % 2 === 0
-    ) {
-      next = decodeHex(current);
-      codec = "hex";
-    } else if (current.includes("&#")) {
-      next = decodeHtmlEntities(current);
-      codec = "entities";
+    const compact = current.replace(/\s+/g, "");
+    const attempts: ReadonlyArray<readonly [string, boolean, () => string | null]> = [
+      ["url", /%[0-9A-Fa-f]{2}/.test(current), () => decodeUrlEncoded(current)],
+      [
+        "unicode-escape",
+        /\\(?:u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2})/.test(current),
+        () => decodeUnicodeEscapes(current),
+      ],
+      [
+        "base64",
+        /^[A-Za-z0-9+/]+={0,2}$/.test(compact) && compact.length > 4,
+        () => decodeBase64(current),
+      ],
+      [
+        "hex",
+        /^[0-9a-fA-F]+$/.test(compact) && compact.length > 4 && compact.length % 2 === 0,
+        () => decodeHex(current),
+      ],
+      [
+        "entities",
+        /&(?:#(?:x[0-9a-f]+|\d+)|lt|gt|amp|quot|apos|nbsp);/i.test(current),
+        () => decodeHtmlEntities(current),
+      ],
+    ];
+    for (const [candidateCodec, applicable, decode] of attempts) {
+      if (!applicable) continue;
+      const candidate = decode();
+      if (candidate === null || candidate === current) continue;
+      next = candidate;
+      codec = candidateCodec;
+      break;
     }
     if (next === null || next === current) {
       break;
@@ -173,9 +201,10 @@ function cpuMicrosecondsSince(start: NodeJS.CpuUsage): number {
 function canDecodeFurther(value: string): boolean {
   const compact = value.replace(/\s+/g, "");
   return (
-    /^https?%[0-9A-Fa-f]{2}/.test(value) ||
+    /%[0-9A-Fa-f]{2}/.test(value) ||
+    /\\(?:u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2})/.test(value) ||
     (/^[A-Za-z0-9+/]+={0,2}$/.test(compact) && compact.length > 4) ||
     (/^[0-9a-fA-F]+$/.test(compact) && compact.length > 4 && compact.length % 2 === 0) ||
-    value.includes("&#")
+    /&(?:#(?:x[0-9a-f]+|\d+)|lt|gt|amp|quot|apos|nbsp);/i.test(value)
   );
 }

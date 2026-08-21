@@ -107,7 +107,7 @@ export const PROBE_SCRIPT_TEMPLATE = `(function () {
   for (var m = 0; m < metas.length; m++) {
     if (m >= maxMetadata) { truncation.metadata = true; break; }
     var mt = metas[m];
-    var key = mt.getAttribute('name') || mt.getAttribute('property') || mt.getAttribute('http-equiv');
+    var key = mt.getAttribute('name') || mt.getAttribute('property') || mt.getAttribute('itemprop') || mt.getAttribute('http-equiv');
     var content = mt.getAttribute('content');
     if (key && content && !meta.meta[key]) {
       budgetText(content.length);
