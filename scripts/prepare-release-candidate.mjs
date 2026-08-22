@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -53,33 +54,15 @@ function parseArgs(args) {
   return version;
 }
 
-/**
- * @param {string} command
- * @param {string[]} args
- * @param {string} cwd
- * @param {{ readonly shell?: boolean }} [options]
- */
-function run(command, args, cwd, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    shell: options.shell ?? false,
-  });
+/** @param {string} command @param {string[]} args @param {string} cwd */
+function run(command, args, cwd) {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", shell: false });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
     throw new Error(`${command} ${args.join(" ")} failed: ${output}`);
   }
   return String(result.stdout);
-}
-
-/** @param {string[]} args @param {string} cwd */
-function runPnpm(args, cwd) {
-  const command = process.platform === "win32" ? "corepack.cmd" : "corepack";
-  // Windows command shims are .cmd files and Node can only execute them
-  // through the command shell. The arguments here are fixed by this script,
-  // never application/release input.
-  run(command, ["pnpm", ...args], cwd, { shell: process.platform === "win32" });
 }
 
 /** @param {string} stagedRoot */
@@ -113,10 +96,9 @@ function assertCandidateVersion(stagedRoot, version) {
 }
 
 /**
- * Changesets preserves workspace-star ranges. The local candidate stage reuses
- * source node_modules junctions that still describe unreleased versions.
- * Materialize published internal edges in staged manifests before packing so
- * the candidate is an npm-installable closed package set.
+ * Changesets preserves workspace-star ranges. Materialize published internal
+ * edges in staged manifests before packing so the candidate is an
+ * npm-installable closed package set.
  *
  * @param {string} stagedRoot
  * @param {string} version
@@ -159,6 +141,54 @@ function candidateChangesets(stagedRoot) {
     .sort();
 }
 
+/** @param {string} stagedRoot */
+function linkStagedDependencies(stagedRoot) {
+  const sourceNodeModules = resolve(root, "node_modules");
+  if (!existsSync(sourceNodeModules)) {
+    throw new Error("Release candidate requires installed workspace dependencies");
+  }
+  const linkType = process.platform === "win32" ? "junction" : "dir";
+  // Reuse immutable root tooling and every package's external dependencies
+  // from the frozen source installation, but give staged packages their own
+  // higher-precedence workspace links. This prevents a staged build from
+  // importing a source-checkout package or asking the registry for a
+  // not-yet-published RC version.
+  symlinkSync(sourceNodeModules, resolve(stagedRoot, "node_modules"), linkType);
+  const stagedScope = resolve(stagedRoot, "packages", "node_modules", "@openagentfence");
+  mkdirSync(stagedScope, { recursive: true });
+  for (const packageName of packageNames) {
+    symlinkSync(
+      resolve(stagedRoot, "packages", packageName),
+      resolve(stagedScope, packageName),
+      linkType,
+    );
+
+    const sourcePackageNodeModules = resolve(root, "packages", packageName, "node_modules");
+    if (!existsSync(sourcePackageNodeModules)) continue;
+    const stagedPackageNodeModules = resolve(stagedRoot, "packages", packageName, "node_modules");
+    mkdirSync(stagedPackageNodeModules, { recursive: true });
+    for (const entry of readdirSync(sourcePackageNodeModules, { withFileTypes: true })) {
+      // Internal dependencies must resolve to the staged candidate rather
+      // than their unversioned source-checkout links.
+      if (entry.name === "@openagentfence") continue;
+      symlinkSync(
+        resolve(sourcePackageNodeModules, entry.name),
+        resolve(stagedPackageNodeModules, entry.name),
+        linkType,
+      );
+    }
+    const stagedPackageScope = resolve(stagedPackageNodeModules, "@openagentfence");
+    mkdirSync(stagedPackageScope, { recursive: true });
+    for (const dependencyPackageName of packageNames) {
+      symlinkSync(
+        resolve(stagedRoot, "packages", dependencyPackageName),
+        resolve(stagedPackageScope, dependencyPackageName),
+        linkType,
+      );
+    }
+  }
+}
+
 function stageCurrentWorkspace() {
   const temporaryRoot = mkdtempSync(resolve(tmpdir(), "openagentfence-rc-"));
   const stagedRoot = resolve(temporaryRoot, "workspace");
@@ -170,10 +200,7 @@ function stageCurrentWorkspace() {
         return !segments.some((segment) => excludedTopLevel.has(segment));
       },
     });
-    const sourceNodeModules = resolve(root, "node_modules");
-    if (!existsSync(sourceNodeModules)) {
-      throw new Error("Release candidate requires installed workspace dependencies");
-    }
+    linkStagedDependencies(stagedRoot);
     return { temporaryRoot, stagedRoot };
   } catch (error) {
     rmSync(temporaryRoot, { recursive: true, force: true });
@@ -193,13 +220,9 @@ export function main(args = process.argv.slice(2)) {
     if (!existsSync(changesetCli))
       throw new Error("Release candidate requires the installed Changesets CLI");
     run(process.execPath, [changesetCli, "version", "--snapshot", "rc"], stagedRoot);
-    // Install while the manifests still retain workspace: ranges. pnpm then
-    // resolves every internal edge to the staged workspace without consulting
-    // a registry for the not-yet-published release candidate version.
-    runPnpm(["install", "--ignore-scripts", "--frozen-lockfile"], stagedRoot);
-    // Publishable tarballs must not retain workspace ranges. Do this only
-    // after the staged workspace links exist, so the following build is still
-    // a cold-stage build rather than an import from the source checkout.
+    // Publishable tarballs must not retain workspace ranges. The staged
+    // workspace links already bind build-time internal imports to this
+    // candidate, not the unversioned source checkout.
     materializeCandidateInternalDependencies(stagedRoot, version);
     const changelogs = assertCandidateVersion(stagedRoot, version);
     run(
