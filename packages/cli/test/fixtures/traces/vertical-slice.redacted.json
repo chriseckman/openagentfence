@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "1.6.0",
+  "events": [
+    {
+      "kind": "session_start",
+      "timestamp": "2026-08-21T00:00:00.000Z",
+      "data": {
+        "sessionId": "fixture-session",
+        "policyHash": "4dd7c765563aa3cd88ebb51f6b4c4681c64b3c16e45edfc58edb8efb64fcba3f",
+        "versions": { "schema": "1.6.0" }
+      }
+    },
+    {
+      "kind": "observation",
+      "timestamp": "2026-08-21T00:00:01.000Z",
+      "data": {
+        "provenance": {
+          "trust": "web",
+          "origin": "https://fixture.example",
+          "pageId": "fixture-page",
+          "timestamp": "2026-08-21T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "finding",
+      "timestamp": "2026-08-21T00:00:01.000Z",
+      "data": {
+        "id": "fixture-hidden-dom",
+        "category": "hidden_dom_instruction",
+        "sourceType": "dom",
+        "evidenceHash": "5e76075f4b8bad30bfc57a94d56352736a84eae9faf02dd4f01a04b4bdbe9bf7",
+        "provenance": {
+          "trust": "web",
+          "origin": "https://fixture.example",
+          "frameOrigin": "https://fixture.example",
+          "pageId": "fixture-page",
+          "elementId": "fixture-hidden",
+          "timestamp": "2026-08-21T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "risk_change",
+      "timestamp": "2026-08-21T00:00:01.000Z",
+      "data": {
+        "state": "RESTRICTED",
+        "score": 40,
+        "previousState": "NORMAL",
+        "signal": "high_confidence_injection"
+      }
+    },
+    {
+      "kind": "taint_activation",
+      "timestamp": "2026-08-21T00:00:01.000Z",
+      "data": {
+        "source": "observation",
+        "provenance": {
+          "trust": "web",
+          "origin": "https://fixture.example",
+          "pageId": "fixture-page",
+          "timestamp": "2026-08-21T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "proposed_action",
+      "timestamp": "2026-08-21T00:00:02.000Z",
+      "data": {
+        "type": "NAVIGATE",
+        "instructionProvenance": {
+          "trust": "web",
+          "origin": "https://fixture.example",
+          "pageId": "fixture-page",
+          "timestamp": "2026-08-21T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "canonical_action",
+      "timestamp": "2026-08-21T00:00:02.000Z",
+      "data": {
+        "type": "NAVIGATE",
+        "instructionProvenance": {
+          "trust": "web",
+          "origin": "https://fixture.example",
+          "pageId": "fixture-page",
+          "timestamp": "2026-08-21T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "kind": "policy_decision",
+      "timestamp": "2026-08-21T00:00:03.000Z",
+      "data": {
+        "verdict": "BLOCK",
+        "reasons": ["navigation_instruction_originated_from_untrusted_dom", "session_restricted"],
+        "policyHash": "4dd7c765563aa3cd88ebb51f6b4c4681c64b3c16e45edfc58edb8efb64fcba3f"
+      }
+    },
+    {
+      "kind": "session_end",
+      "timestamp": "2026-08-21T00:00:04.000Z",
+      "data": { "risk": "RESTRICTED", "score": 40 }
+    }
+  ]
+}

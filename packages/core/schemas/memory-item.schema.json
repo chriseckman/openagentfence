@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/memory-item.schema.json",
+  "title": "OpenAgentFence StoredMemoryItem",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "kind",
+    "content",
+    "provenance",
+    "contentHash",
+    "sensitivity",
+    "markers"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "kind": { "const": "data" },
+    "content": { "type": "string", "maxLength": 102400 },
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["user", "application", "web", "tool", "memory"] },
+        "origin": { "type": "string", "maxLength": 2048 },
+        "frameOrigin": { "type": "string", "maxLength": 2048 },
+        "pageId": { "type": "string", "maxLength": 2048 },
+        "elementId": { "type": "string", "maxLength": 2048 },
+        "timestamp": { "type": "string", "maxLength": 2048 }
+      }
+    },
+    "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "sensitivity": { "enum": ["none", "sensitive", "secret"] },
+    "markers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "enum": ["instruction_removed", "sensitive_value_replaced"] }
+    }
+  }
+}

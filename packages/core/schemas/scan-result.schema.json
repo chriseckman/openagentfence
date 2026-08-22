@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/scan-result.schema.json",
+  "title": "OpenAgentFence ScanResult",
+  "type": "object",
+  "required": ["scanner", "kind", "verdict", "severity", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "scanner": { "type": "string" },
+    "kind": { "enum": ["deterministic", "semantic"] },
+    "verdict": { "enum": ["allow", "warn", "sanitize", "approve", "block"] },
+    "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "finding.schema.json" }
+    },
+    "sanitized": {
+      "type": "object",
+      "required": ["value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string" },
+        "provenance": { "$ref": "finding.schema.json#/properties/provenance" }
+      }
+    },
+    "sanitizations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "replacement", "provenance"],
+        "additionalProperties": false,
+        "properties": {
+          "start": { "type": "integer", "minimum": 0 },
+          "end": { "type": "integer", "minimum": 0 },
+          "replacement": { "type": "string" },
+          "provenance": { "$ref": "finding.schema.json#/properties/provenance" }
+        }
+      }
+    },
+    "timedOut": { "type": "boolean" },
+    "metadata": { "type": "object" }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/untrusted-content.schema.json",
+  "title": "OpenAgentFence UntrustedContent",
+  "type": "object",
+  "required": [
+    "content",
+    "provenance",
+    "contentHash",
+    "revision",
+    "truncated",
+    "instructionEligible"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "content": { "type": "string", "maxLength": 1000000 },
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["web", "tool", "memory"] },
+        "origin": { "type": "string" },
+        "frameOrigin": { "type": "string" },
+        "pageId": { "type": "string" },
+        "elementId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "contentHash": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
+    "instructionEligible": { "const": false }
+  }
+}

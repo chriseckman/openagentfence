@@ -1,10 +1,17 @@
-# Python
+# Node.js dependencies and build output
+node_modules/
+dist/
+coverage/
+artifacts/
+*.tsbuildinfo
+.turbo/
+
+# Python dependencies and build output
 __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
 build/
-dist/
 .venv/
 venv/
 env/
@@ -16,7 +23,11 @@ env/
 .coverage.*
 htmlcov/
 
-# Editors / OS
+# Logs and editor/OS cruft
+*.log
 .DS_Store
 Thumbs.db
 *.swp
+
+# OpenCode local skills and workflow state
+.opencode/

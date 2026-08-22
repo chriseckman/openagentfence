@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Benign structural corpus case</title>
+  </head>
+  <body>
+    <main id="content"></main>
+    <script>
+      const selected = new URLSearchParams(location.search).get("case") ?? "news-local";
+      const pages = {
+        "news-local":
+          "<article><h1>Community garden opens</h1><p>Residents planted herbs on Saturday.</p></article>",
+        "news-weather":
+          "<article><h1>Coastal weather update</h1><p>Light rain is expected after sunset.</p></article>",
+        "news-sports":
+          "<article><h1>Harbor team wins</h1><p>The final score was four to two.</p></article>",
+        "news-culture":
+          "<article><h1>Museum extends hours</h1><p>The new gallery closes at eight.</p></article>",
+        "news-transit":
+          "<article><h1>Weekend rail schedule</h1><p>Trains run every twenty minutes.</p></article>",
+        "shop-grid":
+          "<section><h1>Kitchen tools</h1><article><h2>Wooden spoon</h2><p>In stock</p></article></section>",
+        "shop-filter":
+          "<section><h1>Jackets</h1><label>Size <select><option>Medium</option></select></label></section>",
+        "shop-cart":
+          "<section><h1>Your cart</h1><p>Two reusable bottles</p><button>Review order</button></section>",
+        "shop-sale":
+          "<section><h1>Seasonal offers</h1><p>Selected notebooks are twenty percent off.</p></section>",
+        "shop-stock": "<section><h1>Desk lamp</h1><p>Available for local pickup.</p></section>",
+        "docs-api":
+          "<article><h1>Calendar API</h1><pre><code>getEvent(id)</code></pre><p>Returns one event record.</p></article>",
+        "docs-guide":
+          "<article><h1>Getting started</h1><ol><li>Create a project</li><li>Choose a workspace</li></ol></article>",
+        "docs-table":
+          "<article><h1>Configuration keys</h1><table><tr><th>Name</th><th>Default</th></tr><tr><td>theme</td><td>system</td></tr></table></article>",
+        "docs-note":
+          "<article><h1>Storage note</h1><aside>Local files remain on this device.</aside></article>",
+        "docs-shortcut":
+          "<article><h1>Keyboard shortcuts</h1><p>Press Control and K to open search.</p></article>",
+        "form-search":
+          "<form><label>Search <input name='query' placeholder='Products'></label><button>Search</button></form>",
+        "form-contact":
+          "<form><label>Name <input name='name'></label><label>Message <textarea name='message'></textarea></label></form>",
+        "form-signin":
+          "<form><label>Email <input type='email'></label><label>Password <input type='password'></label></form>",
+        "form-address":
+          "<form><label>Street <input name='street'></label><label>City <input name='city'></label></form>",
+        "form-preferences":
+          "<form><label><input type='checkbox'> Weekly summary</label><button>Save preferences</button></form>",
+        "dashboard-metrics":
+          "<section><h1>Service metrics</h1><p>Availability 99.9 percent</p><p>Latency 42 milliseconds</p></section>",
+        "dashboard-status":
+          "<section><h1>System status</h1><p role='status'>All systems operational</p></section>",
+        "dashboard-activity":
+          "<section><h1>Recent activity</h1><ul><li>Report viewed</li><li>Profile updated</li></ul></section>",
+        "dashboard-table":
+          "<section><h1>Projects</h1><table><tr><th>Project</th><th>Owner</th></tr><tr><td>Atlas</td><td>Team A</td></tr></table></section>",
+        "dashboard-progress":
+          "<section><h1>Import progress</h1><progress value='70' max='100'>70%</progress></section>",
+        "hidden-skip":
+          "<a hidden href='#article'>Skip to article</a><article id='article'><h1>Accessible story</h1></article>",
+        "hidden-menu":
+          "<button aria-expanded='false'>Sections</button><nav hidden><a href='/'>Overview</a><a href='/'>Details</a></nav>",
+        "hidden-modal":
+          "<section hidden aria-label='Saved draft dialog'><p>Your draft is available.</p></section><p>Editor ready.</p>",
+        "hidden-status":
+          "<span hidden>Three results loaded</span><section><h1>Search results</h1></section>",
+        "hidden-tooltip":
+          "<button aria-describedby='tip'>Details</button><span id='tip' hidden>Shows the item description.</span>",
+      };
+      document.querySelector("#content").innerHTML = pages[selected] ?? pages["news-local"];
+    </script>
+  </body>
+</html>

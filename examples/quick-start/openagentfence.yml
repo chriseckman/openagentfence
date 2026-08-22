@@ -1,0 +1,23 @@
+version: 1
+defaults:
+  unknown_action: block
+  scanner_failure:
+    low_risk: block
+    high_risk: block
+navigation:
+  mode: same-site
+  block_private_networks: true
+  max_redirect_hops: 5
+actions:
+  upload: approval
+  delete: approval
+  purchase: approval
+  message: approval
+  execute_script: deny
+  download: approval
+  authenticate: approval
+  publish: approval
+  change_setting: approval
+secrets:
+  resolution: executor_only
+  restricted_mode: keep_approved_sinks

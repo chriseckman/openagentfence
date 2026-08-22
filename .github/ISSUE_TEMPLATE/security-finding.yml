@@ -1,0 +1,35 @@
+name: Security finding (detection-quality)
+description: A missed injection that deterministic controls still contained.
+labels: [security]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Exploitable vulnerabilities must not be filed here.** If deterministic
+        controls were bypassed or protected data leaked, use
+        [private vulnerability reporting](https://github.com/chriseckman/openagentfence/security/advisories/new).
+
+        This form is only for *detection-quality* gaps: a heuristic or model missed
+        something, but the capability envelope still contained it.
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding
+      description: The missed case, with a minimal fixture (synthetic, no real secrets).
+    validations:
+      required: true
+  - type: textarea
+    id: containment
+    attributes:
+      label: Containment
+      description: Which deterministic control still blocked the action, and why?
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label:
+            Deterministic controls still contained this; no capability envelope escape occurred.
+          required: true

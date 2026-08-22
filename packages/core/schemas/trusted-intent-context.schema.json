@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/trusted-intent-context.schema.json",
+  "title": "OpenAgentFence TrustedIntentContext",
+  "type": "object",
+  "required": [
+    "task",
+    "action",
+    "envelopeFacts",
+    "dataClassifications",
+    "riskState",
+    "provenance",
+    "priorActions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "task": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "action": {
+      "type": "object",
+      "required": ["type", "instructionProvenance"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string" },
+        "target": { "type": "object" },
+        "destination": { "type": "string" },
+        "data": {},
+        "instructionProvenance": { "type": "object" },
+        "sideEffectClass": { "type": "string" },
+        "raw": {}
+      }
+    },
+    "envelopeFacts": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "dataClassifications": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "riskState": {
+      "enum": ["NORMAL", "RESTRICTED", "READ_ONLY", "QUARANTINED"]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["user", "application"] },
+        "origin": { "type": "string" },
+        "frameOrigin": { "type": "string" },
+        "pageId": { "type": "string" },
+        "elementId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "priorActions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

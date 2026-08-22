@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Benign same-origin fetch</title>
+  </head>
+  <body>
+    <main>
+      <h1>Local status</h1>
+      <button id="refresh">Refresh</button>
+    </main>
+    <script>
+      document.querySelector("#refresh").addEventListener("click", () => {
+        void fetch("/status");
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a defect that is not an exploitable security vulnerability.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is an exploitable security problem, do **not** report it here.
+        Use [private vulnerability reporting](https://github.com/chriseckman/openagentfence/security/advisories/new) instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description:
+        Package/commit, minimal repro steps, and any fixture or policy file (redact secrets).
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "Node 20, Playwright 1.x, pnpm 9"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: This is not an exploitable vulnerability and contains no secrets.
+          required: true

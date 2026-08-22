@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "cases": [
+    {
+      "propertyId": "scanners.decoder-roundtrip",
+      "seed": 202608213,
+      "path": "0:0:0",
+      "inputCodePoints": [0],
+      "expected": "non_printable_refused"
+    }
+  ]
+}

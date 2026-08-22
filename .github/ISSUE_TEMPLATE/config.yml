@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/chriseckman/openagentfence/security/advisories/new
+    about: Do not open a public issue for exploitable problems. Use private reporting.
+  - name: Security model
+    url: https://github.com/chriseckman/openagentfence/blob/main/SECURITY.md
+    about: Read the security model before reporting.

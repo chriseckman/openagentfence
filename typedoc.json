@@ -1,0 +1,31 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "OpenAgentFence experimental v0.1 API",
+  "entryPointStrategy": "packages",
+  "entryPoints": [
+    "packages/cli",
+    "packages/core",
+    "packages/playwright",
+    "packages/policy",
+    "packages/providers",
+    "packages/scanners",
+    "packages/stagehand",
+    "packages/testing",
+    "packages/vault"
+  ],
+  "packageOptions": {
+    "entryPoints": ["src/index.ts"],
+    "readme": "none",
+    "excludeInternal": true,
+    "excludePrivate": true,
+    "disableGit": true,
+    "disableSources": true,
+    "validation": {
+      "invalidLink": true,
+      "invalidPath": true,
+      "notExported": true
+    }
+  },
+  "out": "artifacts/typedoc",
+  "treatValidationWarningsAsErrors": true
+}

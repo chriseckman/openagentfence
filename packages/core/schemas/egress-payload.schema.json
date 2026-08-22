@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/egress-payload.schema.json",
+  "title": "OpenAgentFence Ephemeral EgressPayload",
+  "type": "object",
+  "required": ["destination", "sink", "value", "byteLength", "complete", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "destination": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "sink": {
+      "enum": [
+        "url_query",
+        "url_fragment",
+        "form_body",
+        "typed_value",
+        "message",
+        "header",
+        "upload_name",
+        "upload_path",
+        "text_body",
+        "routed_request_body"
+      ]
+    },
+    "value": { "type": "string", "maxLength": 65536 },
+    "byteLength": { "type": "integer", "minimum": 0, "maximum": 65536 },
+    "complete": { "type": "boolean" },
+    "fieldType": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "provenance": {
+      "type": "object",
+      "required": ["trust"],
+      "additionalProperties": false,
+      "properties": {
+        "trust": { "enum": ["web", "tool", "memory", "user", "application"] },
+        "origin": { "type": "string", "maxLength": 2048 },
+        "frameOrigin": { "type": "string", "maxLength": 2048 },
+        "pageId": { "type": "string", "maxLength": 256 },
+        "frameId": { "type": "string", "maxLength": 256 },
+        "elementId": { "type": "string", "maxLength": 512 },
+        "timestamp": { "type": "string", "maxLength": 64 }
+      }
+    }
+  }
+}

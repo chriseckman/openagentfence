@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentfence.dev/schemas/openagentfence-policy/v1.json",
+  "title": "OpenAgentFence authorization policy",
+  "description": "Version 1, language-neutral authorization policy. Provider configuration, credentials, and environment substitution are forbidden.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1, "description": "Policy format version. Only version 1 is accepted." },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unknown_action": {
+          "const": "block",
+          "description": "Unknown actions are blocked; this cannot be weakened."
+        },
+        "scanner_failure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "low_risk": {
+              "enum": ["warn", "block"],
+              "description": "Failure handling for low-risk scanners."
+            },
+            "high_risk": {
+              "const": "block",
+              "description": "High-risk scanner failures always block."
+            }
+          }
+        }
+      }
+    },
+    "navigation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["same-site", "same-origin", "allowlist", "none"],
+          "description": "Static navigation scope."
+        },
+        "block_private_networks": {
+          "type": "boolean",
+          "description": "Private-network destinations remain blocked by the core default; true adds a static policy block."
+        },
+        "max_redirect_hops": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "May only lower the secure default of five redirect hops."
+        },
+        "internal_network_ranges": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 128, "pattern": "^[0-9A-Fa-f:.]+/[0-9]{1,3}$" },
+          "description": "Additional application-configured CIDR ranges to block before a routed request continues."
+        }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "upload": { "$ref": "#/$defs/actionDisposition" },
+        "delete": { "$ref": "#/$defs/actionDisposition" },
+        "purchase": { "$ref": "#/$defs/actionDisposition" },
+        "message": { "$ref": "#/$defs/actionDisposition" },
+        "execute_script": { "$ref": "#/$defs/actionDisposition" },
+        "download": { "$ref": "#/$defs/actionDisposition" },
+        "authenticate": { "$ref": "#/$defs/actionDisposition" },
+        "publish": { "$ref": "#/$defs/actionDisposition" },
+        "change_setting": { "$ref": "#/$defs/actionDisposition" }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resolution": {
+          "const": "executor_only",
+          "description": "Secret values resolve only in a bound executor sink."
+        },
+        "restricted_mode": {
+          "enum": ["keep_approved_sinks", "deny_all"],
+          "default": "keep_approved_sinks",
+          "description": "Whether RESTRICTED sessions may reuse exact sinks established while NORMAL."
+        }
+      }
+    },
+    "injection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "high_confidence": { "enum": ["restricted_mode", "block"] },
+        "critical": { "enum": ["quarantine", "block"] }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_actions": { "$ref": "#/$defs/nonNegative" },
+        "max_duration_ms": { "$ref": "#/$defs/nonNegative" },
+        "max_navigations": { "$ref": "#/$defs/nonNegative" },
+        "on_exceeded": { "enum": ["block", "restricted_mode"] }
+      }
+    },
+    "scanners": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "patterns": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "prefix", "alphabet", "min_length", "max_length"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9_.-]{1,64}$" },
+                "prefix": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}$" },
+                "alphabet": { "enum": ["alphanumeric", "base64url", "hex"] },
+                "min_length": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "max_length": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                "kind": { "enum": ["SECRET", "PII", "CREDENTIAL"] }
+              }
+            }
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+                "mode": { "enum": ["warn", "block"] },
+                "origins": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "mode": { "enum": ["warn", "block"] }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "suppressions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule", "scope", "justification"],
+        "properties": {
+          "rule": { "type": "string", "minLength": 1 },
+          "scope": { "type": "string", "minLength": 1 },
+          "justification": { "type": "string", "minLength": 1 },
+          "expires": { "type": "string" }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "restricted_at": { "$ref": "#/$defs/nonNegative" },
+        "quarantine_at": { "$ref": "#/$defs/nonNegative" }
+      }
+    }
+  },
+  "$defs": {
+    "actionDisposition": { "enum": ["deny", "approval", "allow"] },
+    "nonNegative": { "type": "number", "minimum": 0 }
+  }
+}

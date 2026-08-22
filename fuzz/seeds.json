@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0",
+  "prRuns": 1000,
+  "nightlyRuns": 10000,
+  "maxRuns": 20000,
+  "properties": {
+    "core.aggregator-precedence": 202608201,
+    "core.aggregator-idempotence-order": 202608202,
+    "core.probabilistic-non-authority": 202608203,
+    "core.envelope-shrink-only": 202608204,
+    "core.risk-monotonicity": 202608205,
+    "core.action-intent-invalidation": 202608206,
+    "core.action-intent-expiry": 202608207,
+    "core.network-capability-monotonicity": 202608208,
+    "core.network-correlation-non-authority": 202608209,
+    "core.provider-bounds-cancellation": 202608210,
+    "core.arbitrary-contracts": 202608211,
+    "scanners.decoder-bounds": 202608212,
+    "scanners.decoder-roundtrip": 202608213,
+    "scanners.normalizer-idempotence": 202608214,
+    "policy.arbitrary-json": 202608215,
+    "policy.arbitrary-yaml": 202608216
+  },
+  "regressions": [
+    {
+      "propertyId": "scanners.decoder-roundtrip",
+      "seed": 202608213,
+      "path": "0:0:0",
+      "fixture": "packages/scanners/test/fixtures/property-counterexamples.json"
+    }
+  ]
+}
