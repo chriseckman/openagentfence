@@ -77,9 +77,16 @@ function run(command, args, cwd) {
 }
 
 function npmCli() {
-  const path = resolve(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
-  if (!existsSync(path)) throw new Error("Release candidate smoke requires the bundled npm CLI");
-  return path;
+  const executableDirectory = dirname(process.execPath);
+  const candidates = [
+    // Windows Node installations place npm next to node.exe.
+    resolve(executableDirectory, "node_modules", "npm", "bin", "npm-cli.js"),
+    // Official Linux/macOS distributions place it under ../lib.
+    resolve(executableDirectory, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  const cli = candidates.find((candidate) => existsSync(candidate));
+  if (cli === undefined) throw new Error("Release candidate smoke requires the bundled npm CLI");
+  return cli;
 }
 
 function pnpmCommand() {
