@@ -27,6 +27,7 @@
     },
     "test:integration": {
       "dependsOn": ["^build"],
+      "env": ["OAF_TRACE_ARTIFACT_DIR"],
       "cache": false
     }
   }

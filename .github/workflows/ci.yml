@@ -105,6 +105,7 @@ jobs:
           node-version: 22.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm --filter @openagentfence/stagehand lint
       - run: pnpm --filter @openagentfence/stagehand typecheck
       - run: pnpm --filter @openagentfence/stagehand test
@@ -164,11 +165,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm --filter @openagentfence/testing test
       # Includes the hostile-executor regression: arbitrary executor failures
       # can only render closed corpus reason codes in published artifacts.
       - run: pnpm --filter @openagentfence/cli test
-      - run: pnpm build
       - run: pnpm --filter @openagentfence/playwright exec playwright install --with-deps chromium
       - run: pnpm test:corpus --reporter junit --output ../../artifacts/corpus/results.junit.xml
         env:
@@ -194,6 +195,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm test:invariants
 
   benchmark-smoke:
@@ -209,6 +211,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm benchmark:pr
         env:
           OAF_BENCHMARK_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/benchmarks
@@ -231,6 +234,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm docs:check
       - run: pnpm examples:check
 

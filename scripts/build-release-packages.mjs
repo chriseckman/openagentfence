@@ -4,15 +4,15 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageNames = [
-  "cli",
   "core",
-  "playwright",
   "policy",
   "providers",
   "scanners",
-  "stagehand",
   "testing",
   "vault",
+  "playwright",
+  "stagehand",
+  "cli",
 ];
 const buildScript = resolve(root, "scripts", "build-package.mjs");
 const requestedPackages = process.argv.slice(2);

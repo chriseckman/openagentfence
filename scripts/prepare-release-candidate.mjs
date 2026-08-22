@@ -7,7 +7,6 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,6 +63,12 @@ function run(command, args, cwd) {
     );
   }
   return String(result.stdout);
+}
+
+/** @param {string[]} args @param {string} cwd */
+function runPnpm(args, cwd) {
+  const command = process.platform === "win32" ? "corepack.cmd" : "corepack";
+  run(command, ["pnpm", ...args], cwd);
 }
 
 /** @param {string} stagedRoot */
@@ -158,20 +163,6 @@ function stageCurrentWorkspace() {
     if (!existsSync(sourceNodeModules)) {
       throw new Error("Release candidate requires installed workspace dependencies");
     }
-    symlinkSync(
-      sourceNodeModules,
-      resolve(stagedRoot, "node_modules"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
-    for (const packageName of packageNames) {
-      const sourcePackageModules = resolve(root, "packages", packageName, "node_modules");
-      if (!existsSync(sourcePackageModules)) continue;
-      symlinkSync(
-        sourcePackageModules,
-        resolve(stagedRoot, "packages", packageName, "node_modules"),
-        process.platform === "win32" ? "junction" : "dir",
-      );
-    }
     return { temporaryRoot, stagedRoot };
   } catch (error) {
     rmSync(temporaryRoot, { recursive: true, force: true });
@@ -192,6 +183,11 @@ export function main(args = process.argv.slice(2)) {
       throw new Error("Release candidate requires the installed Changesets CLI");
     run(process.execPath, [changesetCli, "version", "--snapshot", "rc"], stagedRoot);
     materializeCandidateInternalDependencies(stagedRoot, version);
+    // A staged, offline installation remaps workspace links to the staged
+    // candidate versions. Reusing source node_modules would resolve package
+    // exports from the unversioned source workspace and conceal a cold-CI
+    // build failure.
+    runPnpm(["install", "--offline", "--ignore-scripts", "--no-frozen-lockfile"], stagedRoot);
     const changelogs = assertCandidateVersion(stagedRoot, version);
     run(
       process.execPath,

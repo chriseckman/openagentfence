@@ -46,8 +46,17 @@ if (!release.includes('npm publish "$tarball" --provenance --access public')) {
 for (const fileName of readdirSync(workflows)) {
   if (!fileName.endsWith(".yml")) continue;
   const contents = readFileSync(resolve(workflows, fileName), "utf8");
-  if (fileName !== "release.yml" && /id-token:\s*write/.test(contents)) {
+  if (fileName === "release.yml" || !/id-token:\s*write/.test(contents)) continue;
+  if (
+    fileName === "publish-pypi.yml" &&
+    /environment:\s*\n\s*name:\s*pypi/.test(contents) &&
+    /pypa\/gh-action-pypi-publish@/.test(contents) &&
+    /permissions:\s*\n\s*id-token:\s*write/.test(contents)
+  ) {
+    continue;
+  }
+  {
     throw new Error(`${fileName} must not receive an OIDC token`);
   }
 }
-process.stdout.write("verified least-privilege release workflow structure\n");
+process.stdout.write("verified least-privilege npm and PyPI release workflow structure\n");
