@@ -1,7 +1,7 @@
 # OpenAgentFence Prompt Injection Defense Research and Architecture Guidance
 
-**Status:** Non-normative research input; reviewed 2026-08-15  
-**Date:** August 2026  
+**Status:** Non-normative research input; reviewed 2026-08-15
+**Date:** August 2026
 **Purpose:** Inform the OpenAgentFence PRD, architecture, threat model, ADRs, implementation plan, and security test strategy before core implementation is frozen.
 
 This document records research and recommendations; it is not a source of
