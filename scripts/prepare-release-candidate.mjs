@@ -53,14 +53,22 @@ function parseArgs(args) {
   return version;
 }
 
-/** @param {string} command @param {string[]} args @param {string} cwd */
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", shell: false });
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @param {string} cwd
+ * @param {{ readonly shell?: boolean }} [options]
+ */
+function run(command, args, cwd, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    shell: options.shell ?? false,
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(
-      `${command} ${args.join(" ")} failed: ${String(result.stderr || result.stdout).trim()}`,
-    );
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    throw new Error(`${command} ${args.join(" ")} failed: ${output}`);
   }
   return String(result.stdout);
 }
@@ -68,7 +76,10 @@ function run(command, args, cwd) {
 /** @param {string[]} args @param {string} cwd */
 function runPnpm(args, cwd) {
   const command = process.platform === "win32" ? "corepack.cmd" : "corepack";
-  run(command, ["pnpm", ...args], cwd);
+  // Windows command shims are .cmd files and Node can only execute them
+  // through the command shell. The arguments here are fixed by this script,
+  // never application/release input.
+  run(command, ["pnpm", ...args], cwd, { shell: process.platform === "win32" });
 }
 
 /** @param {string} stagedRoot */
@@ -182,12 +193,14 @@ export function main(args = process.argv.slice(2)) {
     if (!existsSync(changesetCli))
       throw new Error("Release candidate requires the installed Changesets CLI");
     run(process.execPath, [changesetCli, "version", "--snapshot", "rc"], stagedRoot);
+    // Install while the manifests still retain workspace: ranges. pnpm then
+    // resolves every internal edge to the staged workspace without consulting
+    // a registry for the not-yet-published release candidate version.
+    runPnpm(["install", "--ignore-scripts", "--frozen-lockfile"], stagedRoot);
+    // Publishable tarballs must not retain workspace ranges. Do this only
+    // after the staged workspace links exist, so the following build is still
+    // a cold-stage build rather than an import from the source checkout.
     materializeCandidateInternalDependencies(stagedRoot, version);
-    // A staged, offline installation remaps workspace links to the staged
-    // candidate versions. Reusing source node_modules would resolve package
-    // exports from the unversioned source workspace and conceal a cold-CI
-    // build failure.
-    runPnpm(["install", "--offline", "--ignore-scripts", "--no-frozen-lockfile"], stagedRoot);
     const changelogs = assertCandidateVersion(stagedRoot, version);
     run(
       process.execPath,

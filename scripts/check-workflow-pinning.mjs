@@ -1,5 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 
+function normalizeNewlines(text) {
+  return text.replace(/\r\n?/g, "\n");
+}
+
 const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
 const workflowFiles = (await readdir(workflowDirectory))
   .filter((file) => file.endsWith(".yml") || file.endsWith(".yaml"))
@@ -8,18 +12,19 @@ if (workflowFiles.length === 0) throw new Error("no GitHub workflows found to va
 const workflowDocuments = await Promise.all(
   workflowFiles.map(async (file) => ({
     file,
-    text: await readFile(new URL(file, workflowDirectory), "utf8"),
+    text: normalizeNewlines(await readFile(new URL(file, workflowDirectory), "utf8")),
   })),
 );
 const workflow = workflowDocuments.find((document) => document.file === "ci.yml")?.text;
 if (workflow === undefined) throw new Error("CI workflow is missing");
-const nightly = await readFile(
-  new URL("../.github/workflows/property-fuzz-nightly.yml", import.meta.url),
-  "utf8",
+const nightly = normalizeNewlines(
+  await readFile(
+    new URL("../.github/workflows/property-fuzz-nightly.yml", import.meta.url),
+    "utf8",
+  ),
 );
-const benchmarkNightly = await readFile(
-  new URL("../.github/workflows/benchmark-nightly.yml", import.meta.url),
-  "utf8",
+const benchmarkNightly = normalizeNewlines(
+  await readFile(new URL("../.github/workflows/benchmark-nightly.yml", import.meta.url), "utf8"),
 );
 const uses = [
   ...workflowDocuments.flatMap((document) => [

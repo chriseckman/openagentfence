@@ -73,6 +73,15 @@ describe("bounded policy document loader", () => {
     );
   });
 
+  it("rejects a bounded adversarial substitution candidate without regex backtracking", async () => {
+    await expectInvalid(() =>
+      parsePolicyDocumentSource(
+        JSON.stringify({ version: 1, injection: { high_confidence: "${".repeat(4096) } }),
+        "substitution-bound.json",
+      ),
+    );
+  });
+
   it("rejects malformed JSON and unreadable policy paths without leaking parser output", async () => {
     await expectInvalid(() => parsePolicyDocumentSource('{"version":', "malformed.json"));
     await expectInvalid(() => loadPolicyDocument(fixture("missing.yml")));

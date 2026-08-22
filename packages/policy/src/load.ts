@@ -601,7 +601,9 @@ function rejectUnknown(
 }
 
 function containsEnvironmentSubstitution(input: unknown): boolean {
-  return typeof input === "string" && /\$\{[^}]*\}/.test(input);
+  if (typeof input !== "string") return false;
+  const opening = input.indexOf("${");
+  return opening !== -1 && input.indexOf("}", opening + 2) !== -1;
 }
 
 function clonePolicy(input: Record<string, unknown>): unknown {

@@ -5,8 +5,8 @@
 // explicit HTML anchor. Run via `pnpm docs:check`. This backs the CI "docs"
 // job and the review contract in docs/DOC_REVIEW_PROMPT.md (OAF-REPO-004).
 
-import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join, dirname, extname, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,31 +25,44 @@ function walk(dir, acc = []) {
       continue;
     }
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(path, acc);
-    } else if (extname(entry.name) === ".md") {
-      acc.push(path);
-    }
+    if (entry.isDirectory()) walk(path, acc);
+    else if (extname(entry.name) === ".md") acc.push(path);
   }
   return acc;
 }
 
-const files = [];
-walk(ROOT, files);
-
-function slugifyHeading(heading) {
-  return (
-    heading
-      .trim()
-      .toLowerCase()
-      .replace(/<[^>]*>/g, "")
-      .replace(/[`*_~]/g, "")
-      .replace(/[^\p{L}\p{N}\s-]/gu, "")
-      // GitHub replaces each remaining whitespace character; punctuation
-      // between two spaces therefore produces the intentional `--` seen in
-      // headings such as "M0 — Repository".
-      .replace(/\s/g, "-")
-  );
+/**
+ * Create a GitHub-compatible safe anchor from a Markdown heading.
+ * HTML markup is skipped structurally: no attacker-controlled tag text can
+ * enter the returned anchor, including when the tag is malformed/unclosed.
+ *
+ * @param {string} heading
+ */
+export function slugifyHeading(heading) {
+  let slug = "";
+  let inHtmlTag = false;
+  for (const character of heading.trim().toLowerCase()) {
+    if (inHtmlTag) {
+      if (character === ">") inHtmlTag = false;
+      continue;
+    }
+    if (character === "<") {
+      inHtmlTag = true;
+      continue;
+    }
+    if (character === "`" || character === "*" || character === "_" || character === "~") {
+      continue;
+    }
+    if (character === "-" || /[\p{L}\p{N}]/u.test(character)) {
+      slug += character;
+      continue;
+    }
+    // GitHub replaces each remaining whitespace character; punctuation
+    // between two spaces therefore produces the intentional `--` seen in
+    // headings such as "M0 — Repository".
+    if (/\s/u.test(character)) slug += "-";
+  }
+  return slug;
 }
 
 function anchorsFor(file) {
@@ -79,44 +92,53 @@ function anchorsFor(file) {
   return anchors;
 }
 
-const anchorsByFile = new Map(files.map((file) => [file, anchorsFor(file)]));
+export function main() {
+  const files = [];
+  walk(ROOT, files);
+  const anchorsByFile = new Map(files.map((file) => [file, anchorsFor(file)]));
 
-let broken = 0;
-for (const file of files) {
-  const text = readFileSync(file, "utf8");
-  const linkRe = /\]\(([^)]+)\)/g;
-  let match;
-  while ((match = linkRe.exec(text)) !== null) {
-    const link = match[1];
-    if (link.startsWith("http://") || link.startsWith("https://") || link.startsWith("mailto:")) {
-      continue;
-    }
-    const [pathPart = "", encodedFragment] = link.split("#", 2);
-    const target = pathPart.length === 0 ? file : join(dirname(file), pathPart);
-    if (!existsSync(target)) {
-      console.error(`broken link in ${relative(ROOT, file)}: ${link}`);
-      broken += 1;
-      continue;
-    }
-    if (encodedFragment !== undefined && encodedFragment.length > 0 && extname(target) === ".md") {
-      let fragment;
-      try {
-        fragment = decodeURIComponent(encodedFragment);
-      } catch {
-        console.error(`invalid link fragment in ${relative(ROOT, file)}: ${link}`);
+  let broken = 0;
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    const linkRe = /\]\(([^)]+)\)/g;
+    let match;
+    while ((match = linkRe.exec(text)) !== null) {
+      const link = match[1];
+      if (link.startsWith("http://") || link.startsWith("https://") || link.startsWith("mailto:")) {
+        continue;
+      }
+      const [pathPart = "", encodedFragment] = link.split("#", 2);
+      const target = pathPart.length === 0 ? file : join(dirname(file), pathPart);
+      if (!existsSync(target)) {
+        console.error(`broken link in ${relative(ROOT, file)}: ${link}`);
         broken += 1;
         continue;
       }
-      const targetAnchors = anchorsByFile.get(target) ?? anchorsFor(target);
-      if (!targetAnchors.has(fragment)) {
-        console.error(`broken anchor in ${relative(ROOT, file)}: ${link}`);
-        broken += 1;
+      if (
+        encodedFragment !== undefined &&
+        encodedFragment.length > 0 &&
+        extname(target) === ".md"
+      ) {
+        let fragment;
+        try {
+          fragment = decodeURIComponent(encodedFragment);
+        } catch {
+          console.error(`invalid link fragment in ${relative(ROOT, file)}: ${link}`);
+          broken += 1;
+          continue;
+        }
+        const targetAnchors = anchorsByFile.get(target) ?? anchorsFor(target);
+        if (!targetAnchors.has(fragment)) {
+          console.error(`broken anchor in ${relative(ROOT, file)}: ${link}`);
+          broken += 1;
+        }
       }
     }
   }
+
+  if (broken > 0) process.exitCode = 1;
+  else console.log(`docs link and anchor check passed (${files.length} files)`);
 }
 
-if (broken > 0) {
-  process.exit(1);
-}
-console.log(`docs link and anchor check passed (${files.length} files)`);
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main();

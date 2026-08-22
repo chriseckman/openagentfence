@@ -34,7 +34,7 @@
     "promptfoo:check": "pnpm test:promptfoo-env && node scripts/check-promptfoo-example.mjs",
     "examples:check": "pnpm exec tsc -p examples/tsconfig.json && pnpm build && node examples/quick-start/run.mjs",
     "docs:api": "typedoc --options typedoc.json",
-    "docs:check": "node scripts/check-docs-links.mjs && node scripts/check-docs-contracts.mjs && pnpm docs:api",
+    "docs:check": "node scripts/test-check-docs-links.mjs && node scripts/check-docs-links.mjs && node scripts/check-docs-contracts.mjs && pnpm docs:api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "changeset": "changeset",
