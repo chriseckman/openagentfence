@@ -119,10 +119,11 @@ publication claim.
 The following rows remain deliberately open and must be verified at release
 time. Do **not** sign them off based on local files or this checklist.
 
-- D-03: GitHub `main` branch/ruleset protection and deployed required-check
-  evidence. Current remote evidence is no branch protection, no rulesets, and
-  no deployed TypeScript workflow configuration; see
-  [branch protection](branch-protection.md).
+- D-03: GitHub `main` ruleset protection and deployed required-check evidence.
+  `main-release-protection` is active with strict required checks and no
+  bypass actors, but GitHub dependency graph is still unavailable and the
+  required `dependency-review` check fails. Fresh successful remote evidence
+  is still required; see [branch protection](branch-protection.md).
 - D-04: protected `release` environment, independent reviewer policy, signing
   key/fingerprint custody, and npm trusted-publisher mapping for every public
   package.
